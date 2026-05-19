@@ -17,6 +17,16 @@ pub struct EmbeddingModel {
 }
 
 impl EmbeddingModel {
+    /// Sanitize model name for use as a directory name.
+    fn sanitize_model_name(name: &str) -> String {
+        name.replace('/', "-")
+    }
+
+    /// Get the model directory path within the cache.
+    fn model_dir(model_cache: &Path) -> std::path::PathBuf {
+        model_cache.join(Self::sanitize_model_name(MODEL_NAME))
+    }
+
     /// Load the embedding model from cache or download from HuggingFace.
     ///
     /// The model is cached in the model_cache directory from config.
@@ -28,8 +38,10 @@ impl EmbeddingModel {
             println!("Loading embedding model on {:?}...", device);
         }
 
+        let model_dir = Self::model_dir(model_cache);
+
         // Check if model is already cached
-        let is_cached = Self::check_model_cached(model_cache);
+        let is_cached = Self::check_model_cached(&model_dir);
 
         if !is_cached {
             // Ask for confirmation before downloading
@@ -49,15 +61,15 @@ impl EmbeddingModel {
             }
 
             println!("Downloading model files from HuggingFace...");
-            Self::download_model(model_cache, verbose)?;
+            Self::download_model(&model_dir, verbose)?;
         } else if verbose {
             println!("Loading model from cache...");
         }
 
         // Load model files
-        let config_path = model_cache.join("config.json");
-        let tokenizer_path = model_cache.join("tokenizer.json");
-        let weights_path = model_cache.join("model.safetensors");
+        let config_path = model_dir.join("config.json");
+        let tokenizer_path = model_dir.join("tokenizer.json");
+        let weights_path = model_dir.join("model.safetensors");
 
         // Load config
         let config: BertConfig = serde_json::from_str(
