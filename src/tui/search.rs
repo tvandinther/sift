@@ -26,6 +26,7 @@ pub struct SearchView {
     needs_search: bool,
     embedding_model: Option<Arc<index::embed::EmbeddingModel>>,
     error: Option<String>,
+    input_focused: bool,
 }
 
 impl SearchView {
@@ -40,7 +41,23 @@ impl SearchView {
             needs_search: false,
             embedding_model: None,
             error: None,
+            input_focused: true,
         }
+    }
+
+    /// Check if input is focused.
+    pub fn is_input_focused(&self) -> bool {
+        self.input_focused
+    }
+
+    /// Focus on input.
+    pub fn focus_input(&mut self) {
+        self.input_focused = true;
+    }
+
+    /// Unfocus from input (focus on results).
+    pub fn unfocus_input(&mut self) {
+        self.input_focused = false;
     }
 
     /// Handle character input.
@@ -234,20 +251,30 @@ impl SearchView {
         let title = format!(" sift  [{}] ", mode_str);
 
         let search_text = if self.query.is_empty() {
-            Span::styled("Search...", theme::help())
+            if self.input_focused {
+                Span::styled("Search...", theme::help())
+            } else {
+                Span::styled("Press / or s to search", theme::help())
+            }
         } else {
             Span::styled(&self.query, theme::search_bar())
         };
 
         let mut line = vec![Span::raw("> "), search_text];
 
-        // Add cursor if query is not empty or at position 0
-        if self.cursor_pos == self.query.len() && !self.query.is_empty() {
+        // Add cursor if focused
+        if self.input_focused && self.cursor_pos == self.query.len() {
             line.push(Span::styled(" ", theme::cursor()));
         }
 
+        let border_style = if self.input_focused {
+            theme::search_bar()
+        } else {
+            theme::border()
+        };
+
         let paragraph = Paragraph::new(Line::from(line))
-            .block(Block::default().borders(Borders::ALL).title(title).border_style(theme::border()));
+            .block(Block::default().borders(Borders::ALL).title(title).border_style(border_style));
 
         frame.render_widget(paragraph, area);
     }
@@ -314,10 +341,17 @@ impl SearchView {
             "sources"
         };
 
-        let status_text = format!(
-            " {} {}  [?] help  [i] indexes  [tab] mode  [q] quit ",
-            source_count, sources_text
-        );
+        let status_text = if self.input_focused {
+            format!(
+                " {} {}  [esc] unfocus  [tab] mode  [ctrl+c] quit ",
+                source_count, sources_text
+            )
+        } else {
+            format!(
+                " {} {}  [/] search  [i] indexes  [?] help  [q] quit ",
+                source_count, sources_text
+            )
+        };
 
         let status = Paragraph::new(status_text).style(theme::status_bar());
         frame.render_widget(status, area);

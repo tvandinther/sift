@@ -71,53 +71,76 @@ impl App {
         modifiers: KeyModifiers,
         conn: &Connection,
     ) -> Result<()> {
-        match key {
-            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                self.should_quit = true;
-            }
-            KeyCode::Char('q') | KeyCode::Esc => {
-                self.should_quit = true;
-            }
-            KeyCode::Char('?') => {
-                self.view = View::Help;
-            }
-            KeyCode::Char('i') => {
-                self.indexes_view.refresh(conn)?;
-                self.view = View::Indexes;
-            }
-            KeyCode::Tab => {
-                self.search_view.toggle_mode();
-            }
-            KeyCode::Up => {
-                self.search_view.previous_result();
-            }
-            KeyCode::Down => {
-                self.search_view.next_result();
-            }
-            KeyCode::Enter => {
-                if let Some(path) = self.search_view.selected_path() {
-                    self.open_in_editor(&path)?;
+        // Ctrl+C always quits
+        if matches!(key, KeyCode::Char('c')) && modifiers.contains(KeyModifiers::CONTROL) {
+            self.should_quit = true;
+            return Ok(());
+        }
+
+        // If input is focused, only handle text input and Esc
+        if self.search_view.is_input_focused() {
+            match key {
+                KeyCode::Esc => {
+                    self.search_view.unfocus_input();
                 }
+                KeyCode::Char(c) => {
+                    self.search_view.insert_char(c);
+                }
+                KeyCode::Backspace => {
+                    self.search_view.delete_char();
+                }
+                KeyCode::Left => {
+                    self.search_view.move_cursor_left();
+                }
+                KeyCode::Right => {
+                    self.search_view.move_cursor_right();
+                }
+                KeyCode::Home => {
+                    self.search_view.move_cursor_home();
+                }
+                KeyCode::End => {
+                    self.search_view.move_cursor_end();
+                }
+                KeyCode::Tab => {
+                    self.search_view.toggle_mode();
+                }
+                _ => {}
             }
-            KeyCode::Char(c) => {
-                self.search_view.insert_char(c);
+        } else {
+            // Input not focused - handle navigation and hotkeys
+            match key {
+                KeyCode::Char('q') => {
+                    self.should_quit = true;
+                }
+                KeyCode::Char('?') => {
+                    self.view = View::Help;
+                }
+                KeyCode::Char('i') => {
+                    self.indexes_view.refresh(conn)?;
+                    self.view = View::Indexes;
+                }
+                KeyCode::Char('/') | KeyCode::Char('s') => {
+                    self.search_view.focus_input();
+                }
+                KeyCode::Tab => {
+                    self.search_view.toggle_mode();
+                }
+                KeyCode::Up => {
+                    self.search_view.previous_result();
+                }
+                KeyCode::Down => {
+                    self.search_view.next_result();
+                }
+                KeyCode::Enter => {
+                    if let Some(path) = self.search_view.selected_path() {
+                        self.open_in_editor(&path)?;
+                    }
+                }
+                KeyCode::Esc => {
+                    self.should_quit = true;
+                }
+                _ => {}
             }
-            KeyCode::Backspace => {
-                self.search_view.delete_char();
-            }
-            KeyCode::Left => {
-                self.search_view.move_cursor_left();
-            }
-            KeyCode::Right => {
-                self.search_view.move_cursor_right();
-            }
-            KeyCode::Home => {
-                self.search_view.move_cursor_home();
-            }
-            KeyCode::End => {
-                self.search_view.move_cursor_end();
-            }
-            _ => {}
         }
         Ok(())
     }
@@ -212,17 +235,19 @@ impl App {
     }
 
     fn render_help(&self, frame: &mut Frame) {
-        let area = centered_rect(60, 60, frame.area());
+        let area = centered_rect(70, 70, frame.area());
 
         let help_text = vec![
             Line::from(""),
             Line::from("  Search View"),
             Line::from("  ───────────"),
-            Line::from("  Type          Search for text"),
-            Line::from("  ↑ / ↓         Navigate results"),
-            Line::from("  Enter         Open file in $EDITOR"),
+            Line::from("  / or s        Focus search input"),
+            Line::from("  Type          Search for text (when focused)"),
+            Line::from("  Esc           Unfocus input / Quit (when unfocused)"),
             Line::from("  Tab           Toggle search mode (hybrid/lexical/semantic)"),
-            Line::from("  i             Switch to indexes view"),
+            Line::from("  ↑ / ↓         Navigate results (when unfocused)"),
+            Line::from("  Enter         Open file in $EDITOR (when unfocused)"),
+            Line::from("  i             Switch to indexes view (when unfocused)"),
             Line::from(""),
             Line::from("  Indexes View"),
             Line::from("  ────────────"),
@@ -234,7 +259,7 @@ impl App {
             Line::from("  Global"),
             Line::from("  ──────"),
             Line::from("  ?             Toggle this help"),
-            Line::from("  q / Esc       Quit"),
+            Line::from("  q             Quit (when unfocused)"),
             Line::from("  Ctrl+C        Quit"),
             Line::from(""),
         ];
