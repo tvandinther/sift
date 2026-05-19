@@ -11,6 +11,10 @@ pub struct Cli {
     /// Path to the SQLite database
     #[arg(long, global = true)]
     pub db: Option<PathBuf>,
+
+    /// Enable verbose output
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
 }
 
 #[derive(Subcommand)]

@@ -12,6 +12,7 @@ pub struct SourceSummary {
     pub indexed_at: String,
     pub file_count: usize,
     pub total_size_bytes: u64,
+    pub embedding_count: usize,
 }
 
 /// Summary of garbage collection operation.
@@ -201,10 +202,13 @@ pub fn list_sources(conn: &Connection) -> Result<Vec<SourceSummary>> {
             s.path,
             s.label,
             s.indexed_at,
-            COUNT(f.id) as file_count,
-            COALESCE(SUM(f.size_bytes), 0) as total_size
+            COUNT(DISTINCT f.id) as file_count,
+            COALESCE(SUM(f.size_bytes), 0) as total_size,
+            COUNT(DISTINCT ce.chunk_id) as embedding_count
         FROM sources s
         LEFT JOIN files f ON f.source_id = s.id
+        LEFT JOIN chunks c ON c.file_id = f.id
+        LEFT JOIN chunk_embeddings ce ON ce.chunk_id = c.id
         GROUP BY s.id
         ORDER BY s.indexed_at DESC
         "#
@@ -218,6 +222,7 @@ pub fn list_sources(conn: &Connection) -> Result<Vec<SourceSummary>> {
             indexed_at: row.get(3)?,
             file_count: row.get::<_, i64>(4)? as usize,
             total_size_bytes: row.get::<_, i64>(5)? as u64,
+            embedding_count: row.get::<_, i64>(6)? as usize,
         })
     })?
     .collect::<Result<Vec<_>, _>>()?;

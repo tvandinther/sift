@@ -26,15 +26,17 @@ pub fn run_index(
     label: Option<&str>,
     include_hidden: bool,
     enable_embeddings: bool,
+    verbose: bool,
 ) -> Result<IndexStats> {
     let mut stats = IndexStats::default();
 
     // Load embedding model if enabled
     let embedding_model = if enable_embeddings {
-        println!("Loading embedding model...");
-        match embed::EmbeddingModel::load() {
+        match embed::EmbeddingModel::load(verbose) {
             Ok(model) => {
-                println!("Model loaded successfully.");
+                if verbose {
+                    println!("Model loaded successfully.");
+                }
                 Some(Arc::new(model))
             }
             Err(e) => {

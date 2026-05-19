@@ -20,24 +20,50 @@ impl EmbeddingModel {
     ///
     /// The model is cached in the default HuggingFace cache directory
     /// (~/.cache/huggingface or $HF_HOME).
-    pub fn load() -> Result<Self> {
+    pub fn load(verbose: bool) -> Result<Self> {
         // Detect device (Metal on Apple Silicon, CPU otherwise)
         let device = Self::detect_device()?;
 
-        println!("Loading embedding model on {:?}...", device);
+        if verbose {
+            println!("Loading embedding model on {:?}...", device);
+        }
 
         // Set up HuggingFace API
         let api = Api::new()?;
         let repo = api.model(MODEL_REPO.to_string());
 
-        // Download model files
-        println!("Downloading model files from HuggingFace Hub...");
+        // Check if model is already cached
+        let is_cached = Self::check_model_cached(&repo);
+
+        if !is_cached {
+            // Ask for confirmation before downloading
+            println!("\nEmbedding model not found in cache.");
+            println!("Model: {}", MODEL_REPO);
+            println!("Size: ~90 MB");
+            println!("\nDownload now? (y/N) ");
+
+            use std::io::{self, Write};
+            io::stdout().flush()?;
+
+            let mut response = String::new();
+            io::stdin().read_line(&mut response)?;
+
+            if !response.trim().eq_ignore_ascii_case("y") {
+                anyhow::bail!("Model download cancelled. Use --lexical-only to search without embeddings.");
+            }
+
+            println!("Downloading model files from HuggingFace Hub...");
+        } else if verbose {
+            println!("Loading model from cache...");
+        }
+
+        // Download or load from cache
         let config_path = repo.get("config.json")
-            .with_context(|| format!("Failed to download config.json from {}", MODEL_REPO))?;
+            .with_context(|| format!("Failed to get config.json from {}", MODEL_REPO))?;
         let tokenizer_path = repo.get("tokenizer.json")
-            .with_context(|| format!("Failed to download tokenizer.json from {}", MODEL_REPO))?;
+            .with_context(|| format!("Failed to get tokenizer.json from {}", MODEL_REPO))?;
         let weights_path = repo.get("model.safetensors")
-            .with_context(|| format!("Failed to download model.safetensors from {}", MODEL_REPO))?;
+            .with_context(|| format!("Failed to get model.safetensors from {}", MODEL_REPO))?;
 
         // Load config
         let config: BertConfig = serde_json::from_str(
@@ -101,6 +127,29 @@ impl EmbeddingModel {
         Ok(embedding_vec)
     }
 
+    /// Check if the model is already cached locally.
+    fn check_model_cached(_repo: &hf_hub::api::sync::ApiRepo) -> bool {
+        // Check if the model cache directory exists
+        // hf-hub caches to ~/.cache/huggingface/hub/models--{org}--{model}
+        if let Ok(home) = std::env::var("HOME") {
+            let model_cache_dir = std::path::PathBuf::from(home)
+                .join(".cache")
+                .join("huggingface")
+                .join("hub")
+                .join(format!("models--{}", MODEL_REPO.replace('/', "--")));
+
+            // Check if model directory exists and has snapshots
+            let snapshots_dir = model_cache_dir.join("snapshots");
+            if snapshots_dir.exists() {
+                // If snapshots directory exists and is not empty, model is cached
+                return snapshots_dir.read_dir()
+                    .map(|mut dir| dir.next().is_some())
+                    .unwrap_or(false);
+            }
+        }
+        false
+    }
+
     /// Detect the best available device (Metal on Apple Silicon, CPU otherwise).
     fn detect_device() -> Result<Device> {
         #[cfg(target_os = "macos")]
@@ -123,7 +172,7 @@ mod tests {
     #[test]
     #[ignore] // Requires model download
     fn test_embed_basic() {
-        let model = EmbeddingModel::load().unwrap();
+        let model = EmbeddingModel::load(true).unwrap();
 
         let text = "This is a test sentence for embedding generation.";
         let embedding = model.embed(text).unwrap();

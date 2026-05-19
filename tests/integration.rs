@@ -44,6 +44,13 @@ fn test_index_fixtures() -> Result<()> {
             content='chunks',
             content_rowid='id'
         );
+
+        CREATE TABLE IF NOT EXISTS chunk_embeddings (
+            chunk_id    INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+            embedding   BLOB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON chunk_embeddings(chunk_id);
         "#
     )?;
 
@@ -53,7 +60,7 @@ fn test_index_fixtures() -> Result<()> {
         .join("fixtures");
 
     // Index the fixtures (without embeddings for speed)
-    let stats = index::run_index(&conn, &[fixtures_path.clone()], None, false, false)?;
+    let stats = index::run_index(&conn, &[fixtures_path.clone()], None, false, false, false)?;
 
     // Verify that files were indexed
     assert!(stats.scanned > 0, "Should have scanned files");

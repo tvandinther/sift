@@ -11,6 +11,7 @@ fn main() -> Result<()> {
 
     // Load configuration
     let config = Config::load(cli.db.clone())?;
+    let verbose = cli.verbose;
 
     match cli.command {
         None => {
@@ -19,7 +20,7 @@ fn main() -> Result<()> {
         }
         Some(Command::Index { command }) => match command {
             cli::IndexCommand::Add { paths, name, hidden, no_embeddings } => {
-                cmd_index_add(&config, paths, name.as_deref(), hidden, !no_embeddings)
+                cmd_index_add(&config, paths, name.as_deref(), hidden, !no_embeddings, verbose)
             }
             cli::IndexCommand::List => cmd_index_list(&config),
             cli::IndexCommand::Delete { path_or_label, yes } => {
@@ -43,7 +44,7 @@ fn main() -> Result<()> {
                 search::SearchMode::Hybrid
             };
 
-            cmd_search(&config, query, limit, mode, json)
+            cmd_search(&config, query, limit, mode, json, verbose)
         }
     }
 }
@@ -54,6 +55,7 @@ fn cmd_index_add(
     label: Option<&str>,
     hidden: bool,
     enable_embeddings: bool,
+    verbose: bool,
 ) -> Result<()> {
     let conn = index::db::open_connection(&config.db_path)?;
     let stats = index::run_index(
@@ -62,6 +64,7 @@ fn cmd_index_add(
         label,
         hidden,
         enable_embeddings,
+        verbose,
     )?;
 
     println!(
@@ -83,23 +86,29 @@ fn cmd_index_list(config: &Config) -> Result<()> {
 
     // Print header
     println!(
-        "{:<40} {:<12} {:<8} {:<10} {}",
-        "SOURCE", "LABEL", "FILES", "SIZE", "INDEXED"
+        "{:<40} {:<12} {:<8} {:<10} {:<12} {}",
+        "SOURCE", "LABEL", "FILES", "SIZE", "EMBEDDINGS", "INDEXED"
     );
-    println!("{}", "-".repeat(100));
+    println!("{}", "-".repeat(110));
 
     // Print sources
     for source in sources {
         let label = source.label.as_deref().unwrap_or("—");
         let size = format_size(source.total_size_bytes);
         let indexed = format_timestamp(&source.indexed_at);
+        let embeddings = if source.embedding_count > 0 {
+            format!("{} chunks", source.embedding_count)
+        } else {
+            "none".to_string()
+        };
 
         println!(
-            "{:<40} {:<12} {:<8} {:<10} {}",
+            "{:<40} {:<12} {:<8} {:<10} {:<12} {}",
             truncate(&source.path, 40),
             truncate(label, 12),
             source.file_count,
             size,
+            embeddings,
             indexed
         );
     }
@@ -162,6 +171,7 @@ fn cmd_search(
     limit: usize,
     mode: search::SearchMode,
     json: bool,
+    verbose: bool,
 ) -> Result<()> {
     let conn = index::db::open_connection(&config.db_path)?;
 
@@ -180,16 +190,14 @@ fn cmd_search(
         }
         search::SearchMode::SemanticOnly => {
             // Load embedding model
-            println!("Loading embedding model...");
-            let model = index::embed::EmbeddingModel::load()?;
+            let model = index::embed::EmbeddingModel::load(verbose)?;
 
             let chunk_results = search::semantic::search(&conn, &model, &query, limit * 3)?;
             search::fusion::deduplicate_to_files(chunk_results)
         }
         search::SearchMode::Hybrid => {
             // Load embedding model
-            println!("Loading embedding model...");
-            let model = index::embed::EmbeddingModel::load()?;
+            let model = index::embed::EmbeddingModel::load(verbose)?;
 
             let lex_results = search::lexical::search(&conn, &query, limit * 3)?;
             let sem_results = search::semantic::search(&conn, &model, &query, limit * 3)?;
