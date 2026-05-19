@@ -15,8 +15,9 @@ fn main() -> Result<()> {
 
     match cli.command {
         None => {
-            println!("TUI coming soon. Use 'sift --help' to see available commands.");
-            Ok(())
+            // Launch TUI
+            let conn = index::db::open_connection(&config.db_path)?;
+            sift::tui::run(&conn)
         }
         Some(Command::Index { command }) => match command {
             cli::IndexCommand::Add { paths, name, hidden, no_embeddings } => {
