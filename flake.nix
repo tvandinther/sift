@@ -29,17 +29,11 @@
         ];
 
         # Platform-specific build inputs
-        darwinBuildInputs = with pkgs; lib.optionals stdenv.isDarwin [
-          darwin.apple_sdk.frameworks.Security
-          darwin.apple_sdk.frameworks.SystemConfiguration
-          darwin.apple_sdk.frameworks.Foundation
-          darwin.apple_sdk.frameworks.Metal
-          darwin.apple_sdk.frameworks.MetalKit
-          darwin.apple_sdk.frameworks.Accelerate
-        ];
+        # Darwin frameworks are now provided automatically by stdenv on macOS
+        darwinBuildInputs = [ ];
 
         nativeBuildInputs = commonBuildInputs;
-        buildInputs = commonBuildInputs ++ darwinBuildInputs;
+        buildInputs = commonBuildInputs;
 
       in
       {
@@ -82,14 +76,10 @@
 
             # Optional: for testing and development
             sqlite
-          ] ++ darwinBuildInputs;
+          ];
 
           # Set up environment variables
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
-
-          # For Metal acceleration on macOS
-          DYLD_FALLBACK_LIBRARY_PATH = pkgs.lib.optionalString pkgs.stdenv.isDarwin
-            "${pkgs.darwin.apple_sdk.frameworks.Accelerate}/Library/Frameworks";
 
           shellHook = ''
             echo "🔍 sift development environment"
