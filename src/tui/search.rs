@@ -137,7 +137,6 @@ impl SearchView {
     /// Execute search (always hybrid: lexical + semantic).
     pub fn execute_search(&mut self, conn: &Connection, limit: usize) -> Result<()> {
         self.error = None;
-        self.is_searching = true;
 
         if self.query.trim().is_empty() {
             self.results.clear();
@@ -172,11 +171,13 @@ impl SearchView {
 
         self.results = file_results.into_iter().take(limit).collect();
 
-        // Select first result if any
+        // Select first result if any and unfocus input
         if !self.results.is_empty() {
             self.list_state.select(Some(0));
+            self.input_focused = false;
         } else {
             self.list_state.select(None);
+            // Keep input focused if no results
         }
 
         self.is_searching = false;

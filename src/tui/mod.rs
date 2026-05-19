@@ -34,6 +34,7 @@ pub struct App {
     search_view: SearchView,
     indexes_view: IndexesView,
     should_quit: bool,
+    pending_search: bool,
 }
 
 impl App {
@@ -43,6 +44,7 @@ impl App {
             search_view: SearchView::new(),
             indexes_view: IndexesView::new(),
             should_quit: false,
+            pending_search: false,
         }
     }
 
@@ -79,8 +81,9 @@ impl App {
                     self.search_view.unfocus_input();
                 }
                 KeyCode::Enter => {
-                    // Execute search
-                    self.search_view.execute_search(conn, 50)?;
+                    // Schedule search for next iteration (allows loading indicator to render)
+                    self.pending_search = true;
+                    self.search_view.start_search();
                 }
                 KeyCode::Char(c) => {
                     self.search_view.insert_char(c);
@@ -220,8 +223,8 @@ impl App {
         disable_raw_mode()?;
         execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
 
-        // Determine pager to use
-        let pager = std::env::var("PAGER").unwrap_or_else(|_| {
+        // Determine pager to use and parse arguments
+        let pager_env = std::env::var("PAGER").unwrap_or_else(|_| {
             // Default to less on Unix-like systems
             #[cfg(not(windows))]
             {
@@ -233,7 +236,16 @@ impl App {
             }
         });
 
-        let result = std::process::Command::new(&pager)
+        // Split pager command and arguments (e.g., "less -R" -> ["less", "-R"])
+        let pager_parts: Vec<&str> = pager_env.split_whitespace().collect();
+        let (pager_cmd, pager_args) = if pager_parts.is_empty() {
+            ("less", vec![])
+        } else {
+            (pager_parts[0], pager_parts[1..].to_vec())
+        };
+
+        let result = std::process::Command::new(pager_cmd)
+            .args(&pager_args)
             .arg(path)
             .status();
 
@@ -243,8 +255,8 @@ impl App {
 
         match result {
             Ok(status) if status.success() => Ok(()),
-            Ok(status) => anyhow::bail!("Pager '{}' exited with code: {:?}", pager, status.code()),
-            Err(e) => anyhow::bail!("Failed to execute pager '{}': {} (try setting PAGER env var)", pager, e),
+            Ok(status) => anyhow::bail!("Pager '{}' exited with code: {:?}", pager_env, status.code()),
+            Err(e) => anyhow::bail!("Failed to execute pager '{}': {} (try setting PAGER env var)", pager_env, e),
         }
     }
 
@@ -376,6 +388,17 @@ fn run_app<B: ratatui::backend::Backend>(
 ) -> Result<()> {
     loop {
         terminal.draw(|f| app.render(f, source_count))?;
+
+        // Execute pending search if scheduled
+        if app.pending_search {
+            app.pending_search = false;
+            // Render once to show loading indicator
+            terminal.draw(|f| app.render(f, source_count))?;
+            // Execute search
+            if let Err(e) = app.search_view.execute_search(conn, 50) {
+                app.search_view.set_error(format!("Search error: {}", e));
+            }
+        }
 
         app.handle_event(conn)?;
 
