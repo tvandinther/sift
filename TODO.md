@@ -37,28 +37,30 @@
   - [x] Unit test embedding generation (ignored until model downloaded)
   - [ ] Integration test with vector storage
 
-## Phase 3: Search Implementation
+## Phase 3: Search Implementation ✓ Complete
 
-- [ ] Lexical search (FTS5)
-  - [ ] Query parser for FTS5 syntax
-  - [ ] Rank and score results
-  - [ ] Snippet extraction with highlighting
-- [ ] Semantic search
-  - [ ] Embed query string
-  - [ ] KNN search via sqlite-vec
-  - [ ] Cosine similarity scoring
-- [ ] Hybrid search with RRF
-  - [ ] Reciprocal Rank Fusion implementation
-  - [ ] Merge lexical + semantic results
-  - [ ] File-level deduplication
-  - [ ] Configurable fusion weights
-- [ ] Non-interactive `sift search` command
-  - [ ] Text output with snippets
-  - [ ] JSON output for scripting
-  - [ ] Mode flags (--lexical-only, --semantic-only)
-- [ ] Tests
-  - [ ] Unit test RRF fusion logic
-  - [ ] Integration test search quality
+- [x] Lexical search (FTS5)
+  - [x] FTS5 query execution
+  - [x] Rank and score results
+  - [x] Snippet extraction
+- [x] Semantic search
+  - [x] Embed query string
+  - [x] In-memory cosine similarity (no vec0 ANN yet)
+  - [x] Cosine similarity scoring
+- [x] Hybrid search with RRF
+  - [x] Reciprocal Rank Fusion implementation
+  - [x] Merge lexical + semantic results
+  - [x] File-level deduplication
+  - [ ] **TODO:** Configurable fusion weights
+- [x] Non-interactive `sift search` command
+  - [x] Text output with snippets
+  - [x] JSON output for scripting
+  - [x] Mode flags (--lexical-only, --semantic-only, hybrid)
+- [x] Tests
+  - [x] Unit test RRF fusion logic
+  - [x] Unit test cosine similarity
+  - [x] Unit test lexical search
+  - [x] Unit test deduplication
 
 ## Phase 4: TUI
 

@@ -3,7 +3,7 @@ mod cli;
 use anyhow::{bail, Result};
 use clap::Parser;
 use cli::{Cli, Command};
-use sift::{config::Config, index};
+use sift::{config::Config, index, search};
 use std::io::{self, Write};
 
 fn main() -> Result<()> {
@@ -28,18 +28,22 @@ fn main() -> Result<()> {
             cli::IndexCommand::Prune => cmd_index_prune(&config),
         },
         Some(Command::Config) => cmd_config(&config),
-        Some(Command::Search { query, limit, lexical_only, semantic_only, json: _ }) => {
-            println!("Search coming soon.");
-            println!("Query: {}", query);
-            println!("Limit: {}", limit);
-            if lexical_only {
-                println!("Mode: lexical only");
+        Some(Command::Search {
+            query,
+            limit,
+            lexical_only,
+            semantic_only,
+            json,
+        }) => {
+            let mode = if lexical_only {
+                search::SearchMode::LexicalOnly
             } else if semantic_only {
-                println!("Mode: semantic only");
+                search::SearchMode::SemanticOnly
             } else {
-                println!("Mode: hybrid");
-            }
-            Ok(())
+                search::SearchMode::Hybrid
+            };
+
+            cmd_search(&config, query, limit, mode, json)
         }
     }
 }
@@ -149,6 +153,74 @@ fn cmd_index_prune(config: &Config) -> Result<()> {
 
 fn cmd_config(config: &Config) -> Result<()> {
     println!("{}", config.to_toml()?);
+    Ok(())
+}
+
+fn cmd_search(
+    config: &Config,
+    query: String,
+    limit: usize,
+    mode: search::SearchMode,
+    json: bool,
+) -> Result<()> {
+    let conn = index::db::open_connection(&config.db_path)?;
+
+    // Check if index is empty
+    let source_count: i64 = conn.query_row("SELECT COUNT(*) FROM sources", [], |row| row.get(0))?;
+    if source_count == 0 {
+        println!("No indexed sources. Run 'sift index add <path>' first.");
+        return Ok(());
+    }
+
+    // Perform search based on mode
+    let file_results = match mode {
+        search::SearchMode::LexicalOnly => {
+            let chunk_results = search::lexical::search(&conn, &query, limit * 3)?;
+            search::fusion::deduplicate_to_files(chunk_results)
+        }
+        search::SearchMode::SemanticOnly => {
+            // Load embedding model
+            println!("Loading embedding model...");
+            let model = index::embed::EmbeddingModel::load()?;
+
+            let chunk_results = search::semantic::search(&conn, &model, &query, limit * 3)?;
+            search::fusion::deduplicate_to_files(chunk_results)
+        }
+        search::SearchMode::Hybrid => {
+            // Load embedding model
+            println!("Loading embedding model...");
+            let model = index::embed::EmbeddingModel::load()?;
+
+            let lex_results = search::lexical::search(&conn, &query, limit * 3)?;
+            let sem_results = search::semantic::search(&conn, &model, &query, limit * 3)?;
+
+            let merged = search::fusion::merge_results(lex_results, sem_results);
+            search::fusion::deduplicate_to_files(merged)
+        }
+    };
+
+    // Truncate to limit
+    let file_results: Vec<_> = file_results.into_iter().take(limit).collect();
+
+    if file_results.is_empty() {
+        println!("No results found.");
+        return Ok(());
+    }
+
+    // Output results
+    if json {
+        println!("{}", serde_json::to_string_pretty(&file_results)?);
+    } else {
+        for result in file_results {
+            println!(
+                "{:<60} {:>8}  {}",
+                truncate(&result.file_path.display().to_string(), 60),
+                result.source,
+                truncate(&result.snippet, 80)
+            );
+        }
+    }
+
     Ok(())
 }
 
