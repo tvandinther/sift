@@ -9,9 +9,11 @@
 - [x] Text chunking (400 words, 50 word overlap)
 - [x] SHA256-based change detection
 - [x] .gitignore-aware traversal
-- [x] Index management commands (add, list, delete, prune)
+- [x] Index management commands (add, list, delete, prune, refresh)
 - [x] Integration tests with realistic fixtures
 - [x] CLI restructure with nested commands
+- [x] Verbose mode and model loading UX
+- [x] Embeddings indicator in index list
 
 ## Phase 2: Embeddings & Vector Search (In Progress)
 
