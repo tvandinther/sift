@@ -1,4 +1,5 @@
 pub mod db;
+pub mod embed;
 pub mod read;
 
 use anyhow::{Context, Result};
@@ -6,6 +7,7 @@ use ignore::WalkBuilder;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Statistics from an indexing operation.
 #[derive(Debug, Default)]
@@ -23,8 +25,27 @@ pub fn run_index(
     paths: &[PathBuf],
     label: Option<&str>,
     include_hidden: bool,
+    enable_embeddings: bool,
 ) -> Result<IndexStats> {
     let mut stats = IndexStats::default();
+
+    // Load embedding model if enabled
+    let embedding_model = if enable_embeddings {
+        println!("Loading embedding model...");
+        match embed::EmbeddingModel::load() {
+            Ok(model) => {
+                println!("Model loaded successfully.");
+                Some(Arc::new(model))
+            }
+            Err(e) => {
+                eprintln!("Warning: failed to load embedding model: {}", e);
+                eprintln!("Continuing with lexical indexing only.");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     for path in paths {
         let canonical_path = normalize_path(path)?;
@@ -43,7 +64,7 @@ pub fn run_index(
             print!("\r[{}/{}] indexing {}    ", i + 1, total_files, file_path.display());
             std::io::Write::flush(&mut std::io::stdout())?;
 
-            match index_file(conn, source_id, file_path) {
+            match index_file(conn, source_id, file_path, embedding_model.as_ref()) {
                 Ok(file_stats) => {
                     stats.scanned += 1;
                     match file_stats {
@@ -73,7 +94,12 @@ enum FileIndexResult {
 }
 
 /// Index a single file.
-fn index_file(conn: &Connection, source_id: i64, path: &Path) -> Result<FileIndexResult> {
+fn index_file(
+    conn: &Connection,
+    source_id: i64,
+    path: &Path,
+    embedding_model: Option<&Arc<embed::EmbeddingModel>>,
+) -> Result<FileIndexResult> {
     let canonical_path = normalize_path(path)?;
     let canonical_str = path_to_string(&canonical_path)?;
 
@@ -110,9 +136,22 @@ fn index_file(conn: &Connection, source_id: i64, path: &Path) -> Result<FileInde
     // Upsert file
     let file_id = db::upsert_file(conn, source_id, &canonical_str, &checksum, size_bytes, chunk_count)?;
 
-    // Insert chunks
+    // Insert chunks and embeddings
     for (seq, chunk_body) in chunks.iter().enumerate() {
         db::upsert_chunk(conn, file_id, seq, chunk_body)?;
+        let chunk_id = conn.last_insert_rowid();
+
+        // Generate and store embedding if model is available
+        if let Some(model) = embedding_model {
+            match model.embed(chunk_body) {
+                Ok(embedding) => {
+                    db::insert_embedding(conn, chunk_id, &embedding)?;
+                }
+                Err(e) => {
+                    eprintln!("\nWarning: failed to generate embedding for chunk {}: {}", chunk_id, e);
+                }
+            }
+        }
     }
 
     if is_new {

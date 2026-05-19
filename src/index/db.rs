@@ -37,8 +37,6 @@ pub fn open_connection<P: AsRef<Path>>(path: P) -> Result<Connection> {
     // Enable WAL mode for concurrent reads
     conn.pragma_update(None, "journal_mode", "WAL")?;
 
-    // TODO: Load sqlite-vec extension when embedding support is added
-
     // Run migrations
     init_schema(&conn)?;
 
@@ -78,8 +76,19 @@ fn init_schema(conn: &Connection) -> Result<()> {
             content='chunks',
             content_rowid='id'
         );
+        "#
+    )?;
 
-        -- TODO: Add chunk_embeddings vec0 table when embedding support is added
+    // Create embeddings table
+    // Using regular BLOB storage for now - can migrate to vec0 extension later for better performance
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS chunk_embeddings (
+            chunk_id    INTEGER PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+            embedding   BLOB NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON chunk_embeddings(chunk_id);
         "#
     )?;
 
@@ -262,4 +271,27 @@ pub fn get_file_checksum(conn: &Connection, path: &str) -> Result<Option<String>
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Insert an embedding vector for a chunk.
+pub fn insert_embedding(conn: &Connection, chunk_id: i64, embedding: &[f32]) -> Result<()> {
+    if embedding.len() != 768 {
+        anyhow::bail!(
+            "Invalid embedding dimension: expected 768, got {}",
+            embedding.len()
+        );
+    }
+
+    // Convert to bytes for vec0
+    let embedding_bytes: Vec<u8> = embedding
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+
+    conn.execute(
+        "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?1, ?2)",
+        params![chunk_id, embedding_bytes],
+    )?;
+
+    Ok(())
 }

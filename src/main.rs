@@ -18,8 +18,8 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some(Command::Index { command }) => match command {
-            cli::IndexCommand::Add { paths, name, hidden } => {
-                cmd_index_add(&config, paths, name.as_deref(), hidden)
+            cli::IndexCommand::Add { paths, name, hidden, no_embeddings } => {
+                cmd_index_add(&config, paths, name.as_deref(), hidden, !no_embeddings)
             }
             cli::IndexCommand::List => cmd_index_list(&config),
             cli::IndexCommand::Delete { path_or_label, yes } => {
@@ -44,9 +44,21 @@ fn main() -> Result<()> {
     }
 }
 
-fn cmd_index_add(config: &Config, paths: Vec<std::path::PathBuf>, label: Option<&str>, hidden: bool) -> Result<()> {
+fn cmd_index_add(
+    config: &Config,
+    paths: Vec<std::path::PathBuf>,
+    label: Option<&str>,
+    hidden: bool,
+    enable_embeddings: bool,
+) -> Result<()> {
     let conn = index::db::open_connection(&config.db_path)?;
-    let stats = index::run_index(&conn, &paths, label, hidden)?;
+    let stats = index::run_index(
+        &conn,
+        &paths,
+        label,
+        hidden,
+        enable_embeddings,
+    )?;
 
     println!(
         "\nIndexed {} files — {} added, {} updated, {} skipped, {} failed",

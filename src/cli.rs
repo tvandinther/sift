@@ -62,6 +62,10 @@ pub enum IndexCommand {
         /// Include hidden files and directories
         #[arg(long)]
         hidden: bool,
+
+        /// Disable embedding generation (lexical indexing only)
+        #[arg(long)]
+        no_embeddings: bool,
     },
 
     /// List all indexed sources

@@ -52,8 +52,8 @@ fn test_index_fixtures() -> Result<()> {
         .join("tests")
         .join("fixtures");
 
-    // Index the fixtures
-    let stats = index::run_index(&conn, &[fixtures_path.clone()], None, false)?;
+    // Index the fixtures (without embeddings for speed)
+    let stats = index::run_index(&conn, &[fixtures_path.clone()], None, false, false)?;
 
     // Verify that files were indexed
     assert!(stats.scanned > 0, "Should have scanned files");
