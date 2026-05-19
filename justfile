@@ -1,7 +1,7 @@
 # Sift - Just recipes
 
-# Default recipe - show available commands
-default:
+# Show available commands
+help:
     @just --list
 
 # Build the project in debug mode

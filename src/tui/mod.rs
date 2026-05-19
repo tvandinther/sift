@@ -19,7 +19,7 @@ use ratatui::{
 use rusqlite::Connection;
 use search::SearchView;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 enum View {
@@ -35,6 +35,8 @@ pub struct App {
     indexes_view: IndexesView,
     should_quit: bool,
     pending_search: bool,
+    pending_pager: Option<PathBuf>,
+    pending_system_open: Option<PathBuf>,
 }
 
 impl App {
@@ -45,6 +47,8 @@ impl App {
             indexes_view: IndexesView::new(),
             should_quit: false,
             pending_search: false,
+            pending_pager: None,
+            pending_system_open: None,
         }
     }
 
@@ -123,9 +127,7 @@ impl App {
                 }
                 KeyCode::Char('o') => {
                     if let Some(path) = self.search_view.selected_path() {
-                        if let Err(e) = self.open_with_system(&path) {
-                            self.search_view.set_error(format!("Error opening file: {}", e));
-                        }
+                        self.pending_system_open = Some(path);
                     }
                 }
                 KeyCode::Up => {
@@ -136,9 +138,7 @@ impl App {
                 }
                 KeyCode::Enter => {
                     if let Some(path) = self.search_view.selected_path() {
-                        if let Err(e) = self.view_in_pager(&path) {
-                            self.search_view.set_error(format!("Error opening file: {}", e));
-                        }
+                        self.pending_pager = Some(path);
                     }
                 }
                 KeyCode::Esc => {
@@ -213,7 +213,7 @@ impl App {
         }
     }
 
-    fn view_in_pager(&self, path: &Path) -> Result<()> {
+    fn view_in_pager(&mut self, path: &Path, terminal: &mut Terminal<impl ratatui::backend::Backend>) -> Result<()> {
         // Check if file exists first
         if !path.exists() {
             anyhow::bail!("File not found: {}", path.display());
@@ -252,6 +252,9 @@ impl App {
         // Re-enter the TUI
         enable_raw_mode()?;
         execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+
+        // Clear the terminal to avoid leftover content
+        terminal.clear()?;
 
         match result {
             Ok(status) if status.success() => Ok(()),
@@ -397,6 +400,20 @@ fn run_app<B: ratatui::backend::Backend>(
             // Execute search
             if let Err(e) = app.search_view.execute_search(conn, 50) {
                 app.search_view.set_error(format!("Search error: {}", e));
+            }
+        }
+
+        // Handle pending pager
+        if let Some(path) = app.pending_pager.take() {
+            if let Err(e) = app.view_in_pager(&path, terminal) {
+                app.search_view.set_error(format!("Error opening file: {}", e));
+            }
+        }
+
+        // Handle pending system open
+        if let Some(path) = app.pending_system_open.take() {
+            if let Err(e) = app.open_with_system(&path) {
+                app.search_view.set_error(format!("Error opening file: {}", e));
             }
         }
 
