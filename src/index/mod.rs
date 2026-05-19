@@ -263,8 +263,10 @@ pub fn run_refresh(
                 Some(Arc::new(model))
             }
             Err(e) => {
-                eprintln!("Warning: failed to load embedding model: {}", e);
-                eprintln!("Continuing without embeddings.");
+                if verbose {
+                    eprintln!("Warning: failed to load embedding model: {}", e);
+                    eprintln!("Continuing without embeddings.");
+                }
                 None
             }
         }
@@ -275,7 +277,9 @@ pub fn run_refresh(
     for (source_id, source_path, _label) in sources_to_refresh {
         let canonical_path = normalize_path(&PathBuf::from(&source_path))?;
 
-        println!("Refreshing {}...", source_path);
+        if verbose {
+            println!("Refreshing {}...", source_path);
+        }
 
         // Get current files in DB for this source
         let db_files: std::collections::HashSet<String> =
@@ -310,7 +314,9 @@ pub fn run_refresh(
                     }
                 }
                 Err(e) => {
-                    eprintln!("Warning: failed to index {}: {}", file_path.display(), e);
+                    if verbose {
+                        eprintln!("Warning: failed to index {}: {}", file_path.display(), e);
+                    }
                     stats.failed += 1;
                 }
             }
