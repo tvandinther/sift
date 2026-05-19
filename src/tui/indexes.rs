@@ -157,11 +157,11 @@ impl IndexesView {
     }
 
     /// Refresh selected source.
-    pub fn refresh_selected(&mut self, conn: &Connection) -> Result<()> {
+    pub fn refresh_selected(&mut self, conn: &Connection, model_cache: &std::path::Path) -> Result<()> {
         if let Some(i) = self.list_state.selected() {
             if let Some(source) = self.sources.get(i) {
                 let identifier = source.label.as_deref().unwrap_or(&source.path);
-                match index::run_refresh(conn, Some(identifier), false, false) {
+                match index::run_refresh(conn, Some(identifier), false, model_cache, false) {
                     Ok(stats) => {
                         self.message = Some(format!(
                             "Refreshed '{}': {} scanned, {} added, {} updated, {} removed",
@@ -181,8 +181,8 @@ impl IndexesView {
     }
 
     /// Refresh all sources.
-    pub fn refresh_all(&mut self, conn: &Connection) -> Result<()> {
-        match index::run_refresh(conn, None, false, false) {
+    pub fn refresh_all(&mut self, conn: &Connection, model_cache: &std::path::Path) -> Result<()> {
+        match index::run_refresh(conn, None, false, model_cache, false) {
             Ok(stats) => {
                 self.message = Some(format!(
                     "Refreshed all: {} scanned, {} added, {} updated, {} removed",

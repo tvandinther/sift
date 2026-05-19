@@ -37,13 +37,14 @@ pub fn run_index(
     label: Option<&str>,
     include_hidden: bool,
     enable_embeddings: bool,
+    model_cache: &Path,
     verbose: bool,
 ) -> Result<IndexStats> {
     let mut stats = IndexStats::default();
 
     // Load embedding model if enabled
     let embedding_model = if enable_embeddings {
-        match embed::EmbeddingModel::load(verbose) {
+        match embed::EmbeddingModel::load(model_cache, verbose) {
             Ok(model) => {
                 if verbose {
                     println!("Model loaded successfully.");
@@ -222,6 +223,7 @@ pub fn run_refresh(
     conn: &Connection,
     source_identifier: Option<&str>,
     force_embeddings: bool,
+    model_cache: &Path,
     verbose: bool,
 ) -> Result<RefreshStats> {
     let mut stats = RefreshStats::default();
@@ -255,7 +257,7 @@ pub fn run_refresh(
     };
 
     let embedding_model = if needs_embeddings {
-        match embed::EmbeddingModel::load(verbose) {
+        match embed::EmbeddingModel::load(model_cache, verbose) {
             Ok(model) => {
                 if verbose {
                     println!("Model loaded for embedding generation.");

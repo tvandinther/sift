@@ -59,8 +59,11 @@ fn test_index_fixtures() -> Result<()> {
         .join("tests")
         .join("fixtures");
 
+    // Temporary model cache for testing (not actually used since embeddings are disabled)
+    let model_cache = PathBuf::from("/tmp/sift-test-models");
+
     // Index the fixtures (without embeddings for speed)
-    let stats = index::run_index(&conn, &[fixtures_path.clone()], None, false, false, false)?;
+    let stats = index::run_index(&conn, &[fixtures_path.clone()], None, false, false, &model_cache, false)?;
 
     // Verify that files were indexed
     assert!(stats.scanned > 0, "Should have scanned files");

@@ -52,12 +52,12 @@ impl App {
         }
     }
 
-    fn handle_event(&mut self, conn: &Connection) -> Result<()> {
+    fn handle_event(&mut self, conn: &Connection, model_cache: &Path) -> Result<()> {
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 match self.view {
                     View::Search => self.handle_search_keys(key.code, key.modifiers, conn)?,
-                    View::Indexes => self.handle_indexes_keys(key.code, conn)?,
+                    View::Indexes => self.handle_indexes_keys(key.code, conn, model_cache)?,
                     View::Help => self.handle_help_keys(key.code),
                 }
             }
@@ -150,7 +150,7 @@ impl App {
         Ok(())
     }
 
-    fn handle_indexes_keys(&mut self, key: KeyCode, conn: &Connection) -> Result<()> {
+    fn handle_indexes_keys(&mut self, key: KeyCode, conn: &Connection, model_cache: &Path) -> Result<()> {
         // If in delete confirmation mode
         if self.indexes_view.confirm_delete.is_some() {
             match key {
@@ -185,10 +185,10 @@ impl App {
                 self.indexes_view.prune_all(conn)?;
             }
             KeyCode::Char('r') => {
-                self.indexes_view.refresh_selected(conn)?;
+                self.indexes_view.refresh_selected(conn, model_cache)?;
             }
             KeyCode::Char('R') => {
-                self.indexes_view.refresh_all(conn)?;
+                self.indexes_view.refresh_all(conn, model_cache)?;
             }
             KeyCode::Up => {
                 self.indexes_view.previous();
@@ -353,7 +353,7 @@ impl App {
 }
 
 /// Run the TUI application.
-pub fn run(conn: &Connection) -> Result<()> {
+pub fn run(conn: &Connection, model_cache: &Path) -> Result<()> {
     // Check if there are any sources
     let source_count: i64 = conn.query_row("SELECT COUNT(*) FROM sources", [], |row| row.get(0))?;
 
@@ -369,7 +369,7 @@ pub fn run(conn: &Connection) -> Result<()> {
     app.indexes_view.refresh(conn)?;
 
     // Run event loop
-    let result = run_app(&mut terminal, &mut app, conn, source_count as usize);
+    let result = run_app(&mut terminal, &mut app, conn, model_cache, source_count as usize);
 
     // Restore terminal
     disable_raw_mode()?;
@@ -387,6 +387,7 @@ fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     conn: &Connection,
+    model_cache: &Path,
     source_count: usize,
 ) -> Result<()> {
     loop {
@@ -398,7 +399,7 @@ fn run_app<B: ratatui::backend::Backend>(
             // Render once to show loading indicator
             terminal.draw(|f| app.render(f, source_count))?;
             // Execute search
-            if let Err(e) = app.search_view.execute_search(conn, 50) {
+            if let Err(e) = app.search_view.execute_search(conn, model_cache, 50) {
                 app.search_view.set_error(format!("Search error: {}", e));
             }
         }
@@ -417,7 +418,7 @@ fn run_app<B: ratatui::backend::Backend>(
             }
         }
 
-        app.handle_event(conn)?;
+        app.handle_event(conn, model_cache)?;
 
         if app.should_quit {
             break;

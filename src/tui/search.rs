@@ -135,7 +135,7 @@ impl SearchView {
     }
 
     /// Execute search (always hybrid: lexical + semantic).
-    pub fn execute_search(&mut self, conn: &Connection, limit: usize) -> Result<()> {
+    pub fn execute_search(&mut self, conn: &Connection, model_cache: &std::path::Path, limit: usize) -> Result<()> {
         self.error = None;
 
         if self.query.trim().is_empty() {
@@ -147,7 +147,7 @@ impl SearchView {
 
         // Load embedding model if not already loaded
         if self.embedding_model.is_none() {
-            match index::embed::EmbeddingModel::load(false) {
+            match index::embed::EmbeddingModel::load(model_cache, false) {
                 Ok(model) => {
                     self.embedding_model = Some(Arc::new(model));
                 }

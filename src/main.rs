@@ -17,7 +17,7 @@ fn main() -> Result<()> {
         None => {
             // Launch TUI
             let conn = index::db::open_connection(&config.db_path)?;
-            sift::tui::run(&conn)
+            sift::tui::run(&conn, &config.model_cache)
         }
         Some(Command::Index { command }) => match command {
             cli::IndexCommand::Add { paths, name, hidden, no_embeddings } => {
@@ -68,6 +68,7 @@ fn cmd_index_add(
         label,
         hidden,
         enable_embeddings,
+        &config.model_cache,
         verbose,
     )?;
 
@@ -179,7 +180,7 @@ fn cmd_index_refresh(
         return Ok(());
     }
 
-    let stats = index::run_refresh(&conn, source, force_embeddings, verbose)?;
+    let stats = index::run_refresh(&conn, source, force_embeddings, &config.model_cache, verbose)?;
 
     println!(
         "\nRefresh complete — {} scanned, {} added, {} updated, {} unchanged, {} removed, {} failed",
@@ -219,14 +220,14 @@ fn cmd_search(
         }
         search::SearchMode::SemanticOnly => {
             // Load embedding model
-            let model = index::embed::EmbeddingModel::load(verbose)?;
+            let model = index::embed::EmbeddingModel::load(&config.model_cache, verbose)?;
 
             let chunk_results = search::semantic::search(&conn, &model, &query, limit * 3)?;
             search::fusion::deduplicate_to_files(chunk_results)
         }
         search::SearchMode::Hybrid => {
             // Load embedding model
-            let model = index::embed::EmbeddingModel::load(verbose)?;
+            let model = index::embed::EmbeddingModel::load(&config.model_cache, verbose)?;
 
             let lex_results = search::lexical::search(&conn, &query, limit * 3)?;
             let sem_results = search::semantic::search(&conn, &model, &query, limit * 3)?;

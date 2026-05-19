@@ -2,10 +2,11 @@ use anyhow::{Context, Result};
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config as BertConfig};
-use hf_hub::api::sync::Api;
 use tokenizers::Tokenizer;
+use std::path::Path;
 
-const MODEL_REPO: &str = "sentence-transformers/all-MiniLM-L6-v2";
+const MODEL_NAME: &str = "sentence-transformers/all-MiniLM-L6-v2";
+const BASE_URL: &str = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main";
 const EMBEDDING_DIM: usize = 384;
 
 /// Embedding model for generating semantic vectors from text.
@@ -18,9 +19,8 @@ pub struct EmbeddingModel {
 impl EmbeddingModel {
     /// Load the embedding model from cache or download from HuggingFace.
     ///
-    /// The model is cached in the default HuggingFace cache directory
-    /// (~/.cache/huggingface or $HF_HOME).
-    pub fn load(verbose: bool) -> Result<Self> {
+    /// The model is cached in the model_cache directory from config.
+    pub fn load(model_cache: &Path, verbose: bool) -> Result<Self> {
         // Detect device (Metal on Apple Silicon, CPU otherwise)
         let device = Self::detect_device()?;
 
@@ -28,17 +28,13 @@ impl EmbeddingModel {
             println!("Loading embedding model on {:?}...", device);
         }
 
-        // Set up HuggingFace API
-        let api = Api::new()?;
-        let repo = api.model(MODEL_REPO.to_string());
-
         // Check if model is already cached
-        let is_cached = Self::check_model_cached(&repo);
+        let is_cached = Self::check_model_cached(model_cache);
 
         if !is_cached {
             // Ask for confirmation before downloading
             println!("\nEmbedding model not found in cache.");
-            println!("Model: {}", MODEL_REPO);
+            println!("Model: {}", MODEL_NAME);
             println!("Size: ~90 MB");
             println!("\nDownload now? (y/N) ");
 
@@ -52,18 +48,16 @@ impl EmbeddingModel {
                 anyhow::bail!("Model download cancelled. Use --lexical-only to search without embeddings.");
             }
 
-            println!("Downloading model files from HuggingFace Hub...");
+            println!("Downloading model files from HuggingFace...");
+            Self::download_model(model_cache, verbose)?;
         } else if verbose {
             println!("Loading model from cache...");
         }
 
-        // Download or load from cache
-        let config_path = repo.get("config.json")
-            .with_context(|| format!("Failed to get config.json from {}", MODEL_REPO))?;
-        let tokenizer_path = repo.get("tokenizer.json")
-            .with_context(|| format!("Failed to get tokenizer.json from {}", MODEL_REPO))?;
-        let weights_path = repo.get("model.safetensors")
-            .with_context(|| format!("Failed to get model.safetensors from {}", MODEL_REPO))?;
+        // Load model files
+        let config_path = model_cache.join("config.json");
+        let tokenizer_path = model_cache.join("tokenizer.json");
+        let weights_path = model_cache.join("model.safetensors");
 
         // Load config
         let config: BertConfig = serde_json::from_str(
@@ -85,6 +79,44 @@ impl EmbeddingModel {
             tokenizer,
             device,
         })
+    }
+
+    /// Download model files from HuggingFace.
+    fn download_model(model_cache: &Path, verbose: bool) -> Result<()> {
+        // Create cache directory
+        std::fs::create_dir_all(model_cache)
+            .context("Failed to create model cache directory")?;
+
+        let files = vec![
+            ("config.json", "config.json"),
+            ("tokenizer.json", "tokenizer.json"),
+            ("model.safetensors", "model.safetensors"),
+        ];
+
+        for (filename, output_name) in files {
+            let url = format!("{}/{}", BASE_URL, filename);
+            let output_path = model_cache.join(output_name);
+
+            if verbose {
+                println!("Downloading {}...", filename);
+            }
+
+            let response = ureq::get(&url)
+                .call()
+                .with_context(|| format!("Failed to download {}", url))?;
+
+            let mut file = std::fs::File::create(&output_path)
+                .with_context(|| format!("Failed to create file {}", output_path.display()))?;
+
+            std::io::copy(&mut response.into_reader(), &mut file)
+                .with_context(|| format!("Failed to write {}", filename))?;
+
+            if verbose {
+                println!("  → {}", output_path.display());
+            }
+        }
+
+        Ok(())
     }
 
     /// Generate embedding vector for a text string.
@@ -128,26 +160,10 @@ impl EmbeddingModel {
     }
 
     /// Check if the model is already cached locally.
-    fn check_model_cached(_repo: &hf_hub::api::sync::ApiRepo) -> bool {
-        // Check if the model cache directory exists
-        // hf-hub caches to ~/.cache/huggingface/hub/models--{org}--{model}
-        if let Ok(home) = std::env::var("HOME") {
-            let model_cache_dir = std::path::PathBuf::from(home)
-                .join(".cache")
-                .join("huggingface")
-                .join("hub")
-                .join(format!("models--{}", MODEL_REPO.replace('/', "--")));
+    fn check_model_cached(model_cache: &Path) -> bool {
+        let required_files = ["config.json", "tokenizer.json", "model.safetensors"];
 
-            // Check if model directory exists and has snapshots
-            let snapshots_dir = model_cache_dir.join("snapshots");
-            if snapshots_dir.exists() {
-                // If snapshots directory exists and is not empty, model is cached
-                return snapshots_dir.read_dir()
-                    .map(|mut dir| dir.next().is_some())
-                    .unwrap_or(false);
-            }
-        }
-        false
+        required_files.iter().all(|f| model_cache.join(f).exists())
     }
 
     /// Detect the best available device (Metal on Apple Silicon, CPU otherwise).
@@ -168,11 +184,13 @@ impl EmbeddingModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     #[ignore] // Requires model download
     fn test_embed_basic() {
-        let model = EmbeddingModel::load(true).unwrap();
+        let model_cache = PathBuf::from("/tmp/sift-test-models");
+        let model = EmbeddingModel::load(&model_cache, true).unwrap();
 
         let text = "This is a test sentence for embedding generation.";
         let embedding = model.embed(text).unwrap();
