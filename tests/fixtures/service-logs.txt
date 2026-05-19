@@ -1,0 +1,12 @@
+2026-05-18T14:32:18Z INFO  [api-gateway] Request received: GET /api/v1/users/12345
+2026-05-18T14:32:18Z DEBUG [api-gateway] Validating JWT token
+2026-05-18T14:32:18Z DEBUG [api-gateway] Token valid, subject: user-12345
+2026-05-18T14:32:18Z INFO  [api-gateway] Forwarding request to user-service
+2026-05-18T14:32:19Z INFO  [user-service] Query user by ID: 12345
+2026-05-18T14:32:19Z DEBUG [user-service] Database query: SELECT * FROM users WHERE id = $1
+2026-05-18T14:32:19Z INFO  [user-service] User found, returning profile
+2026-05-18T14:32:19Z INFO  [api-gateway] Response: 200 OK (1.2s)
+2026-05-18T14:32:45Z ERROR [api-gateway] Request timeout: GET /api/v1/orders/98765
+2026-05-18T14:32:45Z ERROR [api-gateway] Upstream service not responding: order-service
+2026-05-18T14:32:45Z WARN  [api-gateway] Circuit breaker triggered for order-service
+2026-05-18T14:32:45Z INFO  [api-gateway] Response: 503 Service Unavailable (30.0s)

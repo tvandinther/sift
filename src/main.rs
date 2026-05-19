@@ -1,0 +1,177 @@
+mod cli;
+
+use anyhow::{bail, Result};
+use clap::Parser;
+use cli::{Cli, Command};
+use sift::{config::Config, index};
+use std::io::{self, Write};
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    // Load configuration
+    let config = Config::load(cli.db.clone())?;
+
+    match cli.command {
+        None => {
+            println!("TUI coming soon. Use 'sift --help' to see available commands.");
+            Ok(())
+        }
+        Some(Command::Index { command }) => match command {
+            cli::IndexCommand::Add { paths, name, hidden } => {
+                cmd_index_add(&config, paths, name.as_deref(), hidden)
+            }
+            cli::IndexCommand::List => cmd_index_list(&config),
+            cli::IndexCommand::Delete { path_or_label, yes } => {
+                cmd_index_delete(&config, &path_or_label, yes)
+            }
+            cli::IndexCommand::Prune => cmd_index_prune(&config),
+        },
+        Some(Command::Config) => cmd_config(&config),
+        Some(Command::Search { query, limit, lexical_only, semantic_only, json: _ }) => {
+            println!("Search coming soon.");
+            println!("Query: {}", query);
+            println!("Limit: {}", limit);
+            if lexical_only {
+                println!("Mode: lexical only");
+            } else if semantic_only {
+                println!("Mode: semantic only");
+            } else {
+                println!("Mode: hybrid");
+            }
+            Ok(())
+        }
+    }
+}
+
+fn cmd_index_add(config: &Config, paths: Vec<std::path::PathBuf>, label: Option<&str>, hidden: bool) -> Result<()> {
+    let conn = index::db::open_connection(&config.db_path)?;
+    let stats = index::run_index(&conn, &paths, label, hidden)?;
+
+    println!(
+        "\nIndexed {} files — {} added, {} updated, {} skipped, {} failed",
+        stats.scanned, stats.added, stats.updated, stats.skipped, stats.failed
+    );
+
+    Ok(())
+}
+
+fn cmd_index_list(config: &Config) -> Result<()> {
+    let conn = index::db::open_connection(&config.db_path)?;
+    let sources = index::db::list_sources(&conn)?;
+
+    if sources.is_empty() {
+        println!("No indexed sources. Run 'sift index add <path>' to get started.");
+        return Ok(());
+    }
+
+    // Print header
+    println!(
+        "{:<40} {:<12} {:<8} {:<10} {}",
+        "SOURCE", "LABEL", "FILES", "SIZE", "INDEXED"
+    );
+    println!("{}", "-".repeat(100));
+
+    // Print sources
+    for source in sources {
+        let label = source.label.as_deref().unwrap_or("—");
+        let size = format_size(source.total_size_bytes);
+        let indexed = format_timestamp(&source.indexed_at);
+
+        println!(
+            "{:<40} {:<12} {:<8} {:<10} {}",
+            truncate(&source.path, 40),
+            truncate(label, 12),
+            source.file_count,
+            size,
+            indexed
+        );
+    }
+
+    Ok(())
+}
+
+fn cmd_index_delete(config: &Config, path_or_label: &str, yes: bool) -> Result<()> {
+    let conn = index::db::open_connection(&config.db_path)?;
+
+    // Confirm unless --yes
+    if !yes {
+        print!("Remove index for '{}'? (y/N) ", path_or_label);
+        io::stdout().flush()?;
+
+        let mut response = String::new();
+        io::stdin().read_line(&mut response)?;
+
+        if !response.trim().eq_ignore_ascii_case("y") {
+            println!("Cancelled.");
+            return Ok(());
+        }
+    }
+
+    let deleted = index::db::delete_source(&conn, path_or_label)?;
+
+    if deleted {
+        println!("Removed index for '{}'", path_or_label);
+    } else {
+        bail!("No source found matching '{}'", path_or_label);
+    }
+
+    Ok(())
+}
+
+fn cmd_index_prune(config: &Config) -> Result<()> {
+    let conn = index::db::open_connection(&config.db_path)?;
+    let summary = index::db::gc(&conn)?;
+
+    if summary.files_removed == 0 {
+        println!("Nothing to remove — all indexed files still exist.");
+    } else {
+        println!(
+            "Removed {} files ({} chunks) that no longer exist on disk.",
+            summary.files_removed, summary.chunks_removed
+        );
+    }
+
+    Ok(())
+}
+
+fn cmd_config(config: &Config) -> Result<()> {
+    println!("{}", config.to_toml()?);
+    Ok(())
+}
+
+/// Format bytes as human-readable size.
+fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+/// Format ISO8601 timestamp as date and time.
+fn format_timestamp(timestamp: &str) -> String {
+    // Try to parse and format nicely, fall back to raw string
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(timestamp) {
+        dt.format("%Y-%m-%d %H:%M").to_string()
+    } else {
+        timestamp.to_string()
+    }
+}
+
+/// Truncate a string to a maximum length, adding ellipsis if needed.
+fn truncate(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}

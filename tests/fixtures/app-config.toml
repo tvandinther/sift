@@ -1,0 +1,30 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+workers = 4
+
+[database]
+url = "postgres://user:pass@localhost/mydb"
+max_connections = 20
+connection_timeout = 30
+
+[logging]
+level = "info"
+format = "json"
+output = "stdout"
+
+[metrics]
+enabled = true
+port = 9090
+path = "/metrics"
+
+[features]
+rate_limiting = true
+caching = true
+async_processing = true
+
+[cache]
+type = "redis"
+url = "redis://localhost:6379"
+ttl = 3600
+max_entries = 10000

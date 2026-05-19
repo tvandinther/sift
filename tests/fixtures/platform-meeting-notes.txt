@@ -1,0 +1,31 @@
+Platform Team Meeting — 2026-05-15
+
+Attendees: Alice, Bob, Carol, Dan
+Absent: Eve
+
+Agenda:
+1. Crossplane upgrade blockers
+2. Observability stack migration (Prometheus → VictoriaMetrics)
+3. Incident review: database connection pool exhaustion
+
+Discussion:
+
+Crossplane upgrade:
+- Blocked on upstream issue with AWS provider credential rotation
+- Workaround: pin to v0.47.1 until fix lands in v0.48.0
+- ETA for upstream fix: 2 weeks
+- Action: Bob to track issue and notify team when resolved
+
+Observability migration:
+- VictoriaMetrics PoC completed, performance looks good
+- 60% reduction in storage costs compared to Thanos
+- Need to migrate existing dashboards (Grafana)
+- Action: Carol to create migration runbook by end of week
+
+Database incident:
+- Root cause: connection pool sizing was static, didn't scale with traffic
+- Fix: implemented dynamic pool sizing based on active connections
+- Monitoring: added alerts for pool utilization >80%
+- Action: Dan to document incident in wiki
+
+Next meeting: 2026-05-22
