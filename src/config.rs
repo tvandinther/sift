@@ -21,7 +21,7 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load configuration with resolution order: CLI overrides → config file → defaults.
+    /// Load configuration with resolution order: ENV → CLI overrides → config file → defaults.
     pub fn load(db_path_override: Option<PathBuf>) -> Result<Self> {
         let mut config = Self::default();
 
@@ -38,6 +38,11 @@ impl Config {
         // CLI overrides take precedence
         if let Some(db_path) = db_path_override {
             config.db_path = expand_home_path(&db_path);
+        }
+
+        // Environment variable overrides (for Nix and testing)
+        if let Ok(model_cache) = std::env::var("SIFT_MODEL_CACHE") {
+            config.model_cache = PathBuf::from(model_cache);
         }
 
         // Ensure db_path and model_cache are expanded

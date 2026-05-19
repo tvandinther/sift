@@ -18,6 +18,42 @@
         "type": "github"
       }
     },
+    "model-config": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-kOWp4ME1X/OC1vJuZi2kwg1i97KlN0BTiv3hGWHbkg4=",
+        "type": "file",
+        "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json"
+      }
+    },
+    "model-tokenizer": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-qkY9Os/B5p/nOX+remSH5u/c0Rh7uUKHliPtllH3PPQ=",
+        "type": "file",
+        "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
+      }
+    },
+    "model-weights": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-sdgWS9QVdD4DtQMDw8l7whIYuRJ8pOCA7msyHwnA6FU=",
+        "type": "file",
+        "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/model.safetensors"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/model.safetensors"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1778869304,
@@ -37,6 +73,9 @@
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
+        "model-config": "model-config",
+        "model-tokenizer": "model-tokenizer",
+        "model-weights": "model-weights",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       }

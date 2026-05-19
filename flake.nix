@@ -8,9 +8,25 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Embedding model files for development and testing
+    # Model: sentence-transformers/all-MiniLM-L6-v2
+    # License: Apache-2.0
+    model-config = {
+      url = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json";
+      flake = false;
+    };
+    model-tokenizer = {
+      url = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer.json";
+      flake = false;
+    };
+    model-weights = {
+      url = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/model.safetensors";
+      flake = false;
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay, model-config, model-tokenizer, model-weights }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) ];
@@ -22,18 +38,22 @@
           extensions = [ "rust-src" "rust-analyzer" ];
         };
 
-        # Common build inputs for all platforms
         commonBuildInputs = with pkgs; [
           pkg-config
           openssl
         ];
 
-        # Platform-specific build inputs
-        # Darwin frameworks are now provided automatically by stdenv on macOS
-        darwinBuildInputs = [ ];
-
         nativeBuildInputs = commonBuildInputs;
         buildInputs = commonBuildInputs;
+
+        # Create model directory with files from flake inputs
+        # This provides the embedding model for tests and development
+        modelDir = pkgs.runCommand "sift-model-cache" {} ''
+          mkdir -p $out/sentence-transformers-all-MiniLM-L6-v2
+          cp ${model-config} $out/sentence-transformers-all-MiniLM-L6-v2/config.json
+          cp ${model-tokenizer} $out/sentence-transformers-all-MiniLM-L6-v2/tokenizer.json
+          cp ${model-weights} $out/sentence-transformers-all-MiniLM-L6-v2/model.safetensors
+        '';
 
       in
       {
@@ -50,14 +70,17 @@
 
             inherit nativeBuildInputs buildInputs;
 
-            # Tests require network access for model downloads
-            doCheck = false;
+            # Provide model cache for tests
+            SIFT_MODEL_CACHE = "${modelDir}";
+
+            # Tests can now run with cached model
+            doCheck = true;
 
             meta = with pkgs.lib; {
               description = "Hybrid full-text and semantic search over local text content";
-              homepage = "https://github.com/yourusername/sift";
+              homepage = "https://github.com/tvandinther/sift";
               license = licenses.mit;
-              maintainers = [ ];
+              maintainers = [ "tvandinther" ];
               mainProgram = "sift";
             };
           };
@@ -78,22 +101,24 @@
             sqlite
           ];
 
-          # Set up environment variables
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
+
+          # Provide cached embedding model for tests and development
+          SIFT_MODEL_CACHE = "${modelDir}";
 
           shellHook = ''
             echo "🔍 sift development environment"
             echo "Rust version: $(rustc --version)"
+            echo "Model cache: $SIFT_MODEL_CACHE"
             echo ""
             echo "Available commands:"
             echo "  cargo build          - Build the project"
-            echo "  cargo test           - Run tests"
+            echo "  cargo test           - Run tests (with cached model)"
             echo "  cargo run -- <args>  - Run sift"
             echo ""
           '';
         };
 
-        # Additional apps for easier invocation
         apps.default = {
           type = "app";
           program = "${self.packages.${system}.default}/bin/sift";
