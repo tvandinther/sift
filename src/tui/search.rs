@@ -1,5 +1,5 @@
 use crate::index;
-use crate::search::{self, SearchMode};
+use crate::search;
 use crate::tui::theme;
 use anyhow::Result;
 use ratatui::{
@@ -11,19 +11,13 @@ use ratatui::{
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-const DEBOUNCE_MS: u64 = 200;
 
 /// Search view state.
 pub struct SearchView {
     query: String,
     cursor_pos: usize,
-    mode: SearchMode,
     results: Vec<search::FileResult>,
     list_state: ListState,
-    last_query_time: Option<Instant>,
-    needs_search: bool,
     embedding_model: Option<Arc<index::embed::EmbeddingModel>>,
     error: Option<String>,
     input_focused: bool,
@@ -34,11 +28,8 @@ impl SearchView {
         Self {
             query: String::new(),
             cursor_pos: 0,
-            mode: SearchMode::Hybrid,
             results: Vec::new(),
             list_state: ListState::default(),
-            last_query_time: None,
-            needs_search: false,
             embedding_model: None,
             error: None,
             input_focused: true,
@@ -64,7 +55,6 @@ impl SearchView {
     pub fn insert_char(&mut self, c: char) {
         self.query.insert(self.cursor_pos, c);
         self.cursor_pos += 1;
-        self.schedule_search();
     }
 
     /// Handle backspace.
@@ -72,7 +62,6 @@ impl SearchView {
         if self.cursor_pos > 0 {
             self.query.remove(self.cursor_pos - 1);
             self.cursor_pos -= 1;
-            self.schedule_search();
         }
     }
 
@@ -98,16 +87,6 @@ impl SearchView {
     /// Move cursor to end.
     pub fn move_cursor_end(&mut self) {
         self.cursor_pos = self.query.len();
-    }
-
-    /// Toggle search mode.
-    pub fn toggle_mode(&mut self) {
-        self.mode = match self.mode {
-            SearchMode::Hybrid => SearchMode::LexicalOnly,
-            SearchMode::LexicalOnly => SearchMode::SemanticOnly,
-            SearchMode::SemanticOnly => SearchMode::Hybrid,
-        };
-        self.schedule_search();
     }
 
     /// Navigate to previous result.
@@ -138,27 +117,8 @@ impl SearchView {
             .map(|r| r.file_path.clone())
     }
 
-    /// Schedule a search after debounce.
-    fn schedule_search(&mut self) {
-        self.last_query_time = Some(Instant::now());
-        self.needs_search = true;
-    }
-
-    /// Check if it's time to execute the search.
-    pub fn should_search(&self) -> bool {
-        if !self.needs_search {
-            return false;
-        }
-        if let Some(last_time) = self.last_query_time {
-            last_time.elapsed() >= Duration::from_millis(DEBOUNCE_MS)
-        } else {
-            false
-        }
-    }
-
-    /// Execute search.
+    /// Execute search (always hybrid: lexical + semantic).
     pub fn execute_search(&mut self, conn: &Connection, limit: usize) -> Result<()> {
-        self.needs_search = false;
         self.error = None;
 
         if self.query.trim().is_empty() {
@@ -167,10 +127,8 @@ impl SearchView {
             return Ok(());
         }
 
-        // Load embedding model if needed and not already loaded
-        if (self.mode == SearchMode::Hybrid || self.mode == SearchMode::SemanticOnly)
-            && self.embedding_model.is_none()
-        {
+        // Load embedding model if not already loaded
+        if self.embedding_model.is_none() {
             match index::embed::EmbeddingModel::load(false) {
                 Ok(model) => {
                     self.embedding_model = Some(Arc::new(model));
@@ -182,30 +140,14 @@ impl SearchView {
             }
         }
 
-        // Perform search
-        let file_results = match self.mode {
-            SearchMode::LexicalOnly => {
-                let chunk_results = search::lexical::search(conn, &self.query, limit * 3)?;
-                search::fusion::deduplicate_to_files(chunk_results)
-            }
-            SearchMode::SemanticOnly => {
-                if let Some(model) = &self.embedding_model {
-                    let chunk_results = search::semantic::search(conn, model, &self.query, limit * 3)?;
-                    search::fusion::deduplicate_to_files(chunk_results)
-                } else {
-                    Vec::new()
-                }
-            }
-            SearchMode::Hybrid => {
-                if let Some(model) = &self.embedding_model {
-                    let lex_results = search::lexical::search(conn, &self.query, limit * 3)?;
-                    let sem_results = search::semantic::search(conn, model, &self.query, limit * 3)?;
-                    let merged = search::fusion::merge_results(lex_results, sem_results);
-                    search::fusion::deduplicate_to_files(merged)
-                } else {
-                    Vec::new()
-                }
-            }
+        // Perform hybrid search (lexical + semantic)
+        let file_results = if let Some(model) = &self.embedding_model {
+            let lex_results = search::lexical::search(conn, &self.query, limit * 3)?;
+            let sem_results = search::semantic::search(conn, model, &self.query, limit * 3)?;
+            let merged = search::fusion::merge_results(lex_results, sem_results);
+            search::fusion::deduplicate_to_files(merged)
+        } else {
+            Vec::new()
         };
 
         self.results = file_results.into_iter().take(limit).collect();
@@ -242,13 +184,7 @@ impl SearchView {
     }
 
     fn render_search_bar(&self, frame: &mut Frame, area: Rect) {
-        let mode_str = match self.mode {
-            SearchMode::Hybrid => "hybrid",
-            SearchMode::LexicalOnly => "lexical",
-            SearchMode::SemanticOnly => "semantic",
-        };
-
-        let title = format!(" sift  [{}] ", mode_str);
+        let title = " sift ";
 
         let search_text = if self.query.is_empty() {
             if self.input_focused {
@@ -343,12 +279,12 @@ impl SearchView {
 
         let status_text = if self.input_focused {
             format!(
-                " {} {}  [esc] unfocus  [tab] mode  [ctrl+c] quit ",
+                " {} {}  [enter] search  [esc] unfocus  [ctrl+c] quit ",
                 source_count, sources_text
             )
         } else {
             format!(
-                " {} {}  [/] search  [i] indexes  [?] help  [q] quit ",
+                " {} {}  [/] focus  [enter] view  [o] open  [i] indexes  [?] help  [q] quit ",
                 source_count, sources_text
             )
         };

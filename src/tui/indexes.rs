@@ -106,8 +106,35 @@ impl IndexesView {
         Ok(())
     }
 
-    /// Run garbage collection.
-    pub fn run_gc(&mut self, conn: &Connection) -> Result<()> {
+    /// Run prune on selected source.
+    pub fn prune_selected(&mut self, conn: &Connection) -> Result<()> {
+        if let Some(i) = self.list_state.selected() {
+            if let Some(source) = self.sources.get(i) {
+                // Get files for this source
+                let files = index::db::get_source_files(conn, source.id)?;
+                let mut removed = 0;
+
+                for file_path in files {
+                    if !std::path::Path::new(&file_path).exists() {
+                        index::db::delete_file(conn, &file_path)?;
+                        removed += 1;
+                    }
+                }
+
+                if removed == 0 {
+                    self.message = Some(format!("No files to remove from '{}'", source.label.as_deref().unwrap_or(&source.path)));
+                } else {
+                    self.message = Some(format!("Removed {} files from '{}'", removed, source.label.as_deref().unwrap_or(&source.path)));
+                }
+                self.is_error = false;
+                self.refresh(conn)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Run prune on all sources.
+    pub fn prune_all(&mut self, conn: &Connection) -> Result<()> {
         match index::db::gc(conn) {
             Ok(summary) => {
                 if summary.files_removed == 0 {
@@ -122,7 +149,50 @@ impl IndexesView {
                 self.refresh(conn)?;
             }
             Err(e) => {
-                self.message = Some(format!("Error running GC: {}", e));
+                self.message = Some(format!("Error running prune: {}", e));
+                self.is_error = true;
+            }
+        }
+        Ok(())
+    }
+
+    /// Refresh selected source.
+    pub fn refresh_selected(&mut self, conn: &Connection) -> Result<()> {
+        if let Some(i) = self.list_state.selected() {
+            if let Some(source) = self.sources.get(i) {
+                let identifier = source.label.as_deref().unwrap_or(&source.path);
+                match index::run_refresh(conn, Some(identifier), false, false) {
+                    Ok(stats) => {
+                        self.message = Some(format!(
+                            "Refreshed '{}': {} scanned, {} added, {} updated, {} removed",
+                            identifier, stats.scanned, stats.added, stats.updated, stats.removed
+                        ));
+                        self.is_error = false;
+                        self.refresh(conn)?;
+                    }
+                    Err(e) => {
+                        self.message = Some(format!("Error refreshing '{}': {}", identifier, e));
+                        self.is_error = true;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Refresh all sources.
+    pub fn refresh_all(&mut self, conn: &Connection) -> Result<()> {
+        match index::run_refresh(conn, None, false, false) {
+            Ok(stats) => {
+                self.message = Some(format!(
+                    "Refreshed all: {} scanned, {} added, {} updated, {} removed",
+                    stats.scanned, stats.added, stats.updated, stats.removed
+                ));
+                self.is_error = false;
+                self.refresh(conn)?;
+            }
+            Err(e) => {
+                self.message = Some(format!("Error refreshing: {}", e));
                 self.is_error = true;
             }
         }
@@ -244,7 +314,7 @@ impl IndexesView {
     }
 
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
-        let status_text = " [d] delete  [g] gc  [s] search  [?] help  [q] quit ";
+        let status_text = " [d] delete  [p] prune  [P] prune all  [r] refresh  [R] refresh all  [s] search  [?] help  [q] quit ";
         let status = Paragraph::new(status_text).style(theme::status_bar());
         frame.render_widget(status, area);
     }

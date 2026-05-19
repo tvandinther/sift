@@ -57,11 +57,6 @@ impl App {
             }
         }
 
-        // Check if search should be executed
-        if matches!(self.view, View::Search) && self.search_view.should_search() {
-            self.search_view.execute_search(conn, 50)?;
-        }
-
         Ok(())
     }
 
@@ -83,6 +78,10 @@ impl App {
                 KeyCode::Esc => {
                     self.search_view.unfocus_input();
                 }
+                KeyCode::Enter => {
+                    // Execute search
+                    self.search_view.execute_search(conn, 50)?;
+                }
                 KeyCode::Char(c) => {
                     self.search_view.insert_char(c);
                 }
@@ -100,9 +99,6 @@ impl App {
                 }
                 KeyCode::End => {
                     self.search_view.move_cursor_end();
-                }
-                KeyCode::Tab => {
-                    self.search_view.toggle_mode();
                 }
                 _ => {}
             }
@@ -122,8 +118,10 @@ impl App {
                 KeyCode::Char('/') | KeyCode::Char('s') => {
                     self.search_view.focus_input();
                 }
-                KeyCode::Tab => {
-                    self.search_view.toggle_mode();
+                KeyCode::Char('o') => {
+                    if let Some(path) = self.search_view.selected_path() {
+                        self.open_with_system(&path)?;
+                    }
                 }
                 KeyCode::Up => {
                     self.search_view.previous_result();
@@ -133,7 +131,7 @@ impl App {
                 }
                 KeyCode::Enter => {
                     if let Some(path) = self.search_view.selected_path() {
-                        self.open_in_editor(&path)?;
+                        self.view_in_pager(&path)?;
                     }
                 }
                 KeyCode::Esc => {
@@ -173,8 +171,17 @@ impl App {
             KeyCode::Char('d') => {
                 self.indexes_view.request_delete();
             }
-            KeyCode::Char('g') => {
-                self.indexes_view.run_gc(conn)?;
+            KeyCode::Char('p') => {
+                self.indexes_view.prune_selected(conn)?;
+            }
+            KeyCode::Char('P') => {
+                self.indexes_view.prune_all(conn)?;
+            }
+            KeyCode::Char('r') => {
+                self.indexes_view.refresh_selected(conn)?;
+            }
+            KeyCode::Char('R') => {
+                self.indexes_view.refresh_all(conn)?;
             }
             KeyCode::Up => {
                 self.indexes_view.previous();
@@ -199,13 +206,13 @@ impl App {
         }
     }
 
-    fn open_in_editor(&self, path: &Path) -> Result<()> {
-        // Temporarily leave the TUI to open the editor
+    fn view_in_pager(&self, path: &Path) -> Result<()> {
+        // Temporarily leave the TUI to open the pager
         disable_raw_mode()?;
         execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
 
-        let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
-        let status = std::process::Command::new(editor)
+        let pager = std::env::var("PAGER").unwrap_or_else(|_| "less".to_string());
+        let status = std::process::Command::new(pager)
             .arg(path)
             .status()?;
 
@@ -214,8 +221,24 @@ impl App {
         execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
 
         if !status.success() {
-            anyhow::bail!("Editor exited with non-zero status");
+            anyhow::bail!("Pager exited with non-zero status");
         }
+
+        Ok(())
+    }
+
+    fn open_with_system(&self, path: &Path) -> Result<()> {
+        // Open file with system default application
+        #[cfg(target_os = "macos")]
+        std::process::Command::new("open").arg(path).spawn()?;
+
+        #[cfg(target_os = "linux")]
+        std::process::Command::new("xdg-open").arg(path).spawn()?;
+
+        #[cfg(target_os = "windows")]
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", path.to_str().unwrap()])
+            .spawn()?;
 
         Ok(())
     }
@@ -235,25 +258,28 @@ impl App {
     }
 
     fn render_help(&self, frame: &mut Frame) {
-        let area = centered_rect(70, 70, frame.area());
+        let area = centered_rect(75, 75, frame.area());
 
         let help_text = vec![
             Line::from(""),
-            Line::from("  Search View"),
-            Line::from("  ───────────"),
+            Line::from("  Search View (Hybrid: Lexical + Semantic)"),
+            Line::from("  ─────────────────────────────────────────"),
             Line::from("  / or s        Focus search input"),
-            Line::from("  Type          Search for text (when focused)"),
+            Line::from("  Type          Enter search query (when focused)"),
+            Line::from("  Enter         Execute search (when focused) / View file in $PAGER (when unfocused)"),
             Line::from("  Esc           Unfocus input / Quit (when unfocused)"),
-            Line::from("  Tab           Toggle search mode (hybrid/lexical/semantic)"),
             Line::from("  ↑ / ↓         Navigate results (when unfocused)"),
-            Line::from("  Enter         Open file in $EDITOR (when unfocused)"),
+            Line::from("  o             Open file with system default (when unfocused)"),
             Line::from("  i             Switch to indexes view (when unfocused)"),
             Line::from(""),
             Line::from("  Indexes View"),
             Line::from("  ────────────"),
             Line::from("  ↑ / ↓         Navigate sources"),
             Line::from("  d             Delete selected source"),
-            Line::from("  g             Run garbage collection"),
+            Line::from("  p             Prune selected source (remove missing files)"),
+            Line::from("  P             Prune all sources"),
+            Line::from("  r             Refresh selected source (check hashes, add/remove files)"),
+            Line::from("  R             Refresh all sources"),
             Line::from("  s             Switch to search view"),
             Line::from(""),
             Line::from("  Global"),
