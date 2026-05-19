@@ -17,3 +17,8 @@ Thumbs.db
 *.db
 *.db-shm
 *.db-wal
+
+# Nix
+result
+result-*
+.direnv/
