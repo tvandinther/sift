@@ -2,7 +2,7 @@ pub mod indexes;
 pub mod search;
 pub mod theme;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     execute,
@@ -120,7 +120,9 @@ impl App {
                 }
                 KeyCode::Char('o') => {
                     if let Some(path) = self.search_view.selected_path() {
-                        self.open_with_system(&path)?;
+                        if let Err(e) = self.open_with_system(&path) {
+                            self.search_view.set_error(format!("Error opening file: {}", e));
+                        }
                     }
                 }
                 KeyCode::Up => {
@@ -131,7 +133,9 @@ impl App {
                 }
                 KeyCode::Enter => {
                     if let Some(path) = self.search_view.selected_path() {
-                        self.view_in_pager(&path)?;
+                        if let Err(e) = self.view_in_pager(&path) {
+                            self.search_view.set_error(format!("Error opening file: {}", e));
+                        }
                     }
                 }
                 KeyCode::Esc => {
@@ -207,38 +211,67 @@ impl App {
     }
 
     fn view_in_pager(&self, path: &Path) -> Result<()> {
+        // Check if file exists first
+        if !path.exists() {
+            anyhow::bail!("File not found: {}", path.display());
+        }
+
         // Temporarily leave the TUI to open the pager
         disable_raw_mode()?;
         execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
 
-        let pager = std::env::var("PAGER").unwrap_or_else(|_| "less".to_string());
-        let status = std::process::Command::new(pager)
+        // Determine pager to use
+        let pager = std::env::var("PAGER").unwrap_or_else(|_| {
+            // Default to less on Unix-like systems
+            #[cfg(not(windows))]
+            {
+                "less".to_string()
+            }
+            #[cfg(windows)]
+            {
+                "more".to_string()
+            }
+        });
+
+        let result = std::process::Command::new(&pager)
             .arg(path)
-            .status()?;
+            .status();
 
         // Re-enter the TUI
         enable_raw_mode()?;
         execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
 
-        if !status.success() {
-            anyhow::bail!("Pager exited with non-zero status");
+        match result {
+            Ok(status) if status.success() => Ok(()),
+            Ok(status) => anyhow::bail!("Pager '{}' exited with code: {:?}", pager, status.code()),
+            Err(e) => anyhow::bail!("Failed to execute pager '{}': {} (try setting PAGER env var)", pager, e),
         }
-
-        Ok(())
     }
 
     fn open_with_system(&self, path: &Path) -> Result<()> {
+        // Check if file exists first
+        if !path.exists() {
+            anyhow::bail!("File not found: {}", path.display());
+        }
+
         // Open file with system default application
         #[cfg(target_os = "macos")]
-        std::process::Command::new("open").arg(path).spawn()?;
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .with_context(|| "Failed to execute 'open' command")?;
 
         #[cfg(target_os = "linux")]
-        std::process::Command::new("xdg-open").arg(path).spawn()?;
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .with_context(|| "Failed to execute 'xdg-open' command")?;
 
         #[cfg(target_os = "windows")]
         std::process::Command::new("cmd")
             .args(["/C", "start", "", path.to_str().unwrap()])
-            .spawn()?;
+            .spawn()
+            .with_context(|| "Failed to execute 'start' command")?;
 
         Ok(())
     }

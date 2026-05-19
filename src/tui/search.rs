@@ -21,6 +21,7 @@ pub struct SearchView {
     embedding_model: Option<Arc<index::embed::EmbeddingModel>>,
     error: Option<String>,
     input_focused: bool,
+    is_searching: bool,
 }
 
 impl SearchView {
@@ -33,7 +34,18 @@ impl SearchView {
             embedding_model: None,
             error: None,
             input_focused: true,
+            is_searching: false,
         }
+    }
+
+    /// Check if currently searching.
+    pub fn is_searching(&self) -> bool {
+        self.is_searching
+    }
+
+    /// Start search (sets loading state).
+    pub fn start_search(&mut self) {
+        self.is_searching = true;
     }
 
     /// Check if input is focused.
@@ -49,6 +61,11 @@ impl SearchView {
     /// Unfocus from input (focus on results).
     pub fn unfocus_input(&mut self) {
         self.input_focused = false;
+    }
+
+    /// Set error message.
+    pub fn set_error(&mut self, msg: String) {
+        self.error = Some(msg);
     }
 
     /// Handle character input.
@@ -120,10 +137,12 @@ impl SearchView {
     /// Execute search (always hybrid: lexical + semantic).
     pub fn execute_search(&mut self, conn: &Connection, limit: usize) -> Result<()> {
         self.error = None;
+        self.is_searching = true;
 
         if self.query.trim().is_empty() {
             self.results.clear();
             self.list_state.select(None);
+            self.is_searching = false;
             return Ok(());
         }
 
@@ -135,6 +154,7 @@ impl SearchView {
                 }
                 Err(e) => {
                     self.error = Some(format!("Failed to load embedding model: {}", e));
+                    self.is_searching = false;
                     return Ok(());
                 }
             }
@@ -159,6 +179,7 @@ impl SearchView {
             self.list_state.select(None);
         }
 
+        self.is_searching = false;
         Ok(())
     }
 
@@ -224,9 +245,17 @@ impl SearchView {
             return;
         }
 
+        if self.is_searching {
+            let loading = Paragraph::new("Searching...")
+                .style(theme::mode_indicator())
+                .block(Block::default().borders(Borders::ALL).border_style(theme::border()));
+            frame.render_widget(loading, area);
+            return;
+        }
+
         if self.results.is_empty() {
             let msg = if self.query.trim().is_empty() {
-                "Type to search..."
+                "Type a query and press Enter to search"
             } else {
                 "No results found"
             };
