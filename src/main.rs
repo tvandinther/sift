@@ -27,6 +27,9 @@ fn main() -> Result<()> {
                 cmd_index_delete(&config, &path_or_label, yes)
             }
             cli::IndexCommand::Prune => cmd_index_prune(&config),
+            cli::IndexCommand::Refresh { source, force_embeddings } => {
+                cmd_index_refresh(&config, source.as_deref(), force_embeddings, verbose)
+            }
         },
         Some(Command::Config) => cmd_config(&config),
         Some(Command::Search {
@@ -156,6 +159,31 @@ fn cmd_index_prune(config: &Config) -> Result<()> {
             summary.files_removed, summary.chunks_removed
         );
     }
+
+    Ok(())
+}
+
+fn cmd_index_refresh(
+    config: &Config,
+    source: Option<&str>,
+    force_embeddings: bool,
+    verbose: bool,
+) -> Result<()> {
+    let conn = index::db::open_connection(&config.db_path)?;
+
+    // Check if there are any sources to refresh
+    let source_count: i64 = conn.query_row("SELECT COUNT(*) FROM sources", [], |row| row.get(0))?;
+    if source_count == 0 {
+        println!("No indexed sources. Run 'sift index add <path>' first.");
+        return Ok(());
+    }
+
+    let stats = index::run_refresh(&conn, source, force_embeddings, verbose)?;
+
+    println!(
+        "\nRefresh complete — {} scanned, {} added, {} updated, {} unchanged, {} removed, {} failed",
+        stats.scanned, stats.added, stats.updated, stats.unchanged, stats.removed, stats.failed
+    );
 
     Ok(())
 }

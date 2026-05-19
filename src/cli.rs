@@ -87,4 +87,14 @@ pub enum IndexCommand {
 
     /// Remove index entries for files no longer on disk
     Prune,
+
+    /// Refresh indexes: check hashes, add new files, remove missing files
+    Refresh {
+        /// Optional source path or label to refresh (refreshes all if not specified)
+        source: Option<String>,
+
+        /// Re-generate embeddings even if content hash unchanged
+        #[arg(long)]
+        force_embeddings: bool,
+    },
 }

@@ -278,6 +278,40 @@ pub fn get_file_checksum(conn: &Connection, path: &str) -> Result<Option<String>
     }
 }
 
+/// Get all file paths for a given source ID.
+pub fn get_source_files(conn: &Connection, source_id: i64) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT path FROM files WHERE source_id = ?1"
+    )?;
+
+    let paths = stmt
+        .query_map(params![source_id], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(paths)
+}
+
+/// Get source by path or label.
+pub fn get_source_by_identifier(conn: &Connection, identifier: &str) -> Result<Option<(i64, String, Option<String>)>> {
+    let result = conn.query_row(
+        "SELECT id, path, label FROM sources WHERE path = ?1 OR label = ?1",
+        params![identifier],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    );
+
+    match result {
+        Ok(source) => Ok(Some(source)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Delete a file from the database by path.
+pub fn delete_file(conn: &Connection, path: &str) -> Result<()> {
+    conn.execute("DELETE FROM files WHERE path = ?1", params![path])?;
+    Ok(())
+}
+
 /// Insert an embedding vector for a chunk.
 pub fn insert_embedding(conn: &Connection, chunk_id: i64, embedding: &[f32]) -> Result<()> {
     if embedding.len() != 384 {

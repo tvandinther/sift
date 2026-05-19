@@ -4,7 +4,7 @@ pub mod read;
 
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,6 +16,17 @@ pub struct IndexStats {
     pub added: usize,
     pub updated: usize,
     pub skipped: usize,
+    pub failed: usize,
+}
+
+/// Statistics from a refresh operation.
+#[derive(Debug, Default)]
+pub struct RefreshStats {
+    pub scanned: usize,
+    pub added: usize,
+    pub updated: usize,
+    pub unchanged: usize,
+    pub removed: usize,
     pub failed: usize,
 }
 
@@ -204,4 +215,118 @@ fn compute_checksum(text: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+/// Refresh indexes: check hashes, add new files, remove missing files.
+pub fn run_refresh(
+    conn: &Connection,
+    source_identifier: Option<&str>,
+    force_embeddings: bool,
+    verbose: bool,
+) -> Result<RefreshStats> {
+    let mut stats = RefreshStats::default();
+
+    // Get sources to refresh
+    let sources_to_refresh = if let Some(identifier) = source_identifier {
+        // Refresh specific source
+        if let Some((id, path, label)) = db::get_source_by_identifier(conn, identifier)? {
+            vec![(id, path, label)]
+        } else {
+            anyhow::bail!("No source found matching '{}'", identifier);
+        }
+    } else {
+        // Refresh all sources
+        db::list_sources(conn)?
+            .into_iter()
+            .map(|s| (s.id, s.path, s.label))
+            .collect()
+    };
+
+    // Load embedding model if needed
+    let needs_embeddings = force_embeddings || {
+        // Check if any source has embeddings - if so, maintain them
+        sources_to_refresh.iter().any(|(id, _, _)| {
+            conn.query_row(
+                "SELECT COUNT(*) FROM chunk_embeddings WHERE chunk_id IN (SELECT c.id FROM chunks c JOIN files f ON f.id = c.file_id WHERE f.source_id = ?1)",
+                params![id],
+                |row| row.get::<_, i64>(0)
+            ).unwrap_or(0) > 0
+        })
+    };
+
+    let embedding_model = if needs_embeddings {
+        match embed::EmbeddingModel::load(verbose) {
+            Ok(model) => {
+                if verbose {
+                    println!("Model loaded for embedding generation.");
+                }
+                Some(Arc::new(model))
+            }
+            Err(e) => {
+                eprintln!("Warning: failed to load embedding model: {}", e);
+                eprintln!("Continuing without embeddings.");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    for (source_id, source_path, _label) in sources_to_refresh {
+        let canonical_path = normalize_path(&PathBuf::from(&source_path))?;
+
+        println!("Refreshing {}...", source_path);
+
+        // Get current files in DB for this source
+        let db_files: std::collections::HashSet<String> =
+            db::get_source_files(conn, source_id)?.into_iter().collect();
+
+        // Collect current files on disk
+        let disk_files = collect_files(&canonical_path, false)?;
+        let disk_files_set: std::collections::HashSet<String> = disk_files
+            .iter()
+            .filter_map(|p| normalize_path(p).ok().and_then(|pb| path_to_string(&pb).ok()))
+            .collect();
+
+        // Process files on disk
+        for file_path in disk_files {
+            match index_file(conn, source_id, &file_path, embedding_model.as_ref()) {
+                Ok(result) => {
+                    stats.scanned += 1;
+                    match result {
+                        FileIndexResult::Added => {
+                            stats.added += 1;
+                            if verbose {
+                                println!("  Added: {}", file_path.display());
+                            }
+                        }
+                        FileIndexResult::Updated => {
+                            stats.updated += 1;
+                            if verbose {
+                                println!("  Updated: {}", file_path.display());
+                            }
+                        }
+                        FileIndexResult::Skipped => stats.unchanged += 1,
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Warning: failed to index {}: {}", file_path.display(), e);
+                    stats.failed += 1;
+                }
+            }
+        }
+
+        // Remove files that are in DB but not on disk
+        for db_file in db_files {
+            if !disk_files_set.contains(&db_file) {
+                db::delete_file(conn, &db_file)?;
+                stats.removed += 1;
+                if verbose {
+                    println!("  Removed: {}", db_file);
+                }
+            }
+        }
+    }
+
+    Ok(stats)
 }
