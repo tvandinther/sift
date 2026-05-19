@@ -275,9 +275,9 @@ pub fn get_file_checksum(conn: &Connection, path: &str) -> Result<Option<String>
 
 /// Insert an embedding vector for a chunk.
 pub fn insert_embedding(conn: &Connection, chunk_id: i64, embedding: &[f32]) -> Result<()> {
-    if embedding.len() != 768 {
+    if embedding.len() != 384 {
         anyhow::bail!(
-            "Invalid embedding dimension: expected 768, got {}",
+            "Invalid embedding dimension: expected 384, got {}",
             embedding.len()
         );
     }

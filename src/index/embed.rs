@@ -2,11 +2,11 @@ use anyhow::{Context, Result};
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config as BertConfig};
-use hf_hub::{api::sync::Api, Repo, RepoType};
+use hf_hub::api::sync::Api;
 use tokenizers::Tokenizer;
 
-const MODEL_REPO: &str = "nomic-ai/nomic-embed-text-v1";
-const EMBEDDING_DIM: usize = 768;
+const MODEL_REPO: &str = "sentence-transformers/all-MiniLM-L6-v2";
+const EMBEDDING_DIM: usize = 384;
 
 /// Embedding model for generating semantic vectors from text.
 pub struct EmbeddingModel {
@@ -26,20 +26,18 @@ impl EmbeddingModel {
 
         println!("Loading embedding model on {:?}...", device);
 
-        // Set up HuggingFace API with custom cache
+        // Set up HuggingFace API
         let api = Api::new()?;
-        let api = api.repo(Repo::new(MODEL_REPO.to_string(), RepoType::Model));
+        let repo = api.model(MODEL_REPO.to_string());
 
         // Download model files
-        let config_path = api
-            .get("config.json")
-            .context("Failed to download config.json")?;
-        let tokenizer_path = api
-            .get("tokenizer.json")
-            .context("Failed to download tokenizer.json")?;
-        let weights_path = api
-            .get("model.safetensors")
-            .context("Failed to download model.safetensors")?;
+        println!("Downloading model files from HuggingFace Hub...");
+        let config_path = repo.get("config.json")
+            .with_context(|| format!("Failed to download config.json from {}", MODEL_REPO))?;
+        let tokenizer_path = repo.get("tokenizer.json")
+            .with_context(|| format!("Failed to download tokenizer.json from {}", MODEL_REPO))?;
+        let weights_path = repo.get("model.safetensors")
+            .with_context(|| format!("Failed to download model.safetensors from {}", MODEL_REPO))?;
 
         // Load config
         let config: BertConfig = serde_json::from_str(

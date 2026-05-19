@@ -109,11 +109,11 @@ Do not add dependencies without good reason. Prefer crates already in the tree.
 
 ## Embedding model
 
-Default model: `nomic-ai/nomic-embed-text-v1` from Hugging Face.
+Default model: `sentence-transformers/all-MiniLM-L6-v2` from Hugging Face.
 
-Weights are downloaded on first `sift index` run to `~/.local/share/sift/models/`. Subsequent runs use the cached weights. Never re-download unless `--refresh-model` is passed explicitly.
+Weights are downloaded on first `sift index` run (or first semantic search) to `~/.cache/huggingface/hub/`. Subsequent runs use the cached weights.
 
-Embedding dimensions: 768. All vectors stored as `f32`.
+Embedding dimensions: 384. All vectors stored as `f32`.
 
 The model runs on CPU by default. On Apple Silicon, enable Metal acceleration if available — detect at runtime via candle's device detection, not a compile-time flag.
 
