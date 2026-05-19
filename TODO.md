@@ -64,28 +64,28 @@
   - [x] Unit test lexical search
   - [x] Unit test deduplication
 
-## Phase 4: TUI
+## Phase 4: TUI ✓ Complete
 
-- [ ] Ratatui setup
-  - [ ] Event loop with crossterm
-  - [ ] Layout: search bar + results + status
-  - [ ] Theme and colors
-- [ ] Interactive search view
-  - [ ] Live search with debouncing
-  - [ ] Scrollable results
-  - [ ] Result selection and preview
-  - [ ] Snippet highlighting
-- [ ] Index management view
-  - [ ] List sources
-  - [ ] Delete sources
-  - [ ] Run prune
-- [ ] Key bindings
-  - [ ] Search input
-  - [ ] Result navigation
-  - [ ] Mode toggle (hybrid/lexical/semantic)
-  - [ ] View switching (search ↔ indexes)
-  - [ ] File opening in $EDITOR
-- [ ] Help overlay
+- [x] Ratatui setup
+  - [x] Event loop with crossterm
+  - [x] Layout: search bar + results + status
+  - [x] Theme and colors
+- [x] Interactive search view
+  - [x] Live search with debouncing (200ms)
+  - [x] Scrollable results
+  - [x] Result selection and preview
+  - [x] Snippet highlighting
+- [x] Index management view
+  - [x] List sources
+  - [x] Delete sources (with confirmation)
+  - [x] Run GC
+- [x] Key bindings
+  - [x] Search input
+  - [x] Result navigation
+  - [x] Mode toggle (hybrid/lexical/semantic)
+  - [x] View switching (search ↔ indexes)
+  - [x] File opening in $EDITOR
+- [x] Help overlay
 
 ## Phase 5: Polish & Optimization
 
