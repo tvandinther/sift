@@ -32,34 +32,6 @@ run *ARGS:
 run-verbose *ARGS:
     cargo run -- --verbose {{ARGS}}
 
-# Search for a query
-search QUERY *ARGS:
-    cargo run -- search "{{QUERY}}" {{ARGS}}
-
-# Index a path
-index PATH *ARGS:
-    cargo run -- index add "{{PATH}}" {{ARGS}}
-
-# List all indexed sources
-list:
-    cargo run -- index list
-
-# Delete an index
-delete SOURCE:
-    cargo run -- index delete "{{SOURCE}}"
-
-# Refresh indexes
-refresh *SOURCE:
-    cargo run -- index refresh {{SOURCE}}
-
-# Prune missing files from indexes
-prune:
-    cargo run -- index prune
-
-# Show configuration
-config:
-    cargo run -- config
-
 # Clean build artifacts
 clean:
     cargo clean
@@ -153,10 +125,6 @@ check: fmt-check lint test
 # Full CI check - format, lint, test, and build release
 ci: fmt-check lint test build-release
     @echo "✓ CI checks passed!"
-
-# Index the current project for testing
-index-self:
-    cargo run -- index add . --name sift-src --no-embeddings
 
 # Clean database (remove index.db)
 clean-db:
