@@ -107,14 +107,65 @@ Hybrid search combines lexical precision with semantic understanding.
    - Finds conceptually similar text
    - Works with paraphrases and synonyms
 
-3. **Hybrid** (default) (`search/fusion.rs`)
-   - Runs both lexical and semantic searches
+3. **Hybrid** (default) (`search/fusion.rs`, `search/expand.rs`)
+   - Two-phase search with pseudo-relevance feedback:
+     - **Phase 1 (Seed):** Run lexical + semantic, merge with RRF
+     - **Phase 2 (Expansion):** Extract terms from top 5, re-search, merge
+   - Query expansion via TF-IDF on seed results
    - Merges results using Reciprocal Rank Fusion (RRF)
-   - Formula: `score = Σ 1/(k + rank)` where k=60
+   - Weighted merge: seed results k=60, expansion k=80
    - Deduplicates to file level (highest-scoring chunk wins)
-   - Balances precision and recall
+   - Use `--fast` to skip expansion for single-pass search
 
-**Query Flow:**
+**Query Flow (Hybrid with Expansion, default):**
+```
+User Query
+    │
+    ├─────────────── Phase 1: Seed Search ───────────────┐
+    │                                                     │
+    ├─→ Lexical Search (FTS5) ──→ Ranked chunk list     │
+    │                              (BM25 scores)          │
+    │                                                     │
+    └─→ Semantic Search ────────→ Ranked chunk list     │
+        (embed + cosine)           (similarity scores)    │
+                │                                         │
+                ▼                                         │
+         Reciprocal Rank Fusion (k=60)                   │
+                │                                         │
+                ▼                                         │
+         Top 5 chunks (seed results) ◄────────────────────┘
+                │
+                ▼
+         Extract expansion terms
+         (TF-IDF, filter stopwords)
+                │
+                ▼
+         Expanded Query = Original + Terms
+                │
+    ├─────────────── Phase 2: Expansion Search ──────────┐
+    │                                                     │
+    ├─→ Lexical Search (FTS5) ──→ Ranked chunk list     │
+    │   with expanded query        (BM25 scores)         │
+    │                                                     │
+    └─→ Semantic Search ────────→ Ranked chunk list     │
+        with expanded query        (similarity scores)    │
+                │                                         │
+                ▼                                         │
+         Reciprocal Rank Fusion (k=60)                   │
+         (expansion results) ◄─────────────────────────────┘
+                │
+                ▼
+    Weighted RRF Merge
+    (seed k=60, expansion k=80)
+                │
+                ▼
+         File-level deduplication
+                │
+                ▼
+         Top N results with snippets
+```
+
+**Query Flow (--fast mode):**
 ```
 User Query
     │
@@ -125,13 +176,57 @@ User Query
         (embed + cosine)           (similarity scores)
                 │
                 ▼
-         Reciprocal Rank Fusion
+         Reciprocal Rank Fusion (k=60)
                 │
                 ▼
          File-level deduplication
                 │
                 ▼
          Top N results with snippets
+```
+
+**Query Expansion via Pseudo-Relevance Feedback:**
+
+The default hybrid search uses a two-phase approach to improve recall:
+
+1. **Seed Search**
+   - Run hybrid search with original query
+   - Extract top 5 chunk bodies
+
+2. **Term Extraction** (`search/expand.rs`)
+   - Tokenize seed chunk bodies
+   - Compute term frequency (TF) in seed results
+   - Compute inverse document frequency (IDF) via FTS5
+     - `IDF = ln(total_chunks / (1 + doc_count))`
+   - Score each term: `TF-IDF = TF × IDF`
+   - Filter out:
+     - Stop words (hardcoded list of ~50 common English words)
+     - Terms already in original query
+     - Terms shorter than 3 characters
+   - Select top 8-10 terms by TF-IDF score
+
+3. **Expansion Search**
+   - Append expansion terms to original query
+   - Run hybrid search with expanded query
+
+4. **Weighted Merge**
+   - Merge seed and expansion results with RRF
+   - Seed results: k=60 (higher weight)
+   - Expansion results: k=80 (lower weight)
+   - Higher k = lower influence, so seed results dominate
+
+**Rationale:**
+- Improves recall without manual query refinement
+- Finds conceptually related documents user didn't explicitly query
+- Local-only, no LLM or network calls required
+- `--fast` flag disables for speed-sensitive use cases
+
+**Example:**
+```
+Query: "kubernetes"
+Seed results → Top terms: "cluster", "pod", "deployment", "helm"
+Expanded query: "kubernetes cluster pod deployment helm"
+→ Finds documents about K8s concepts even if "kubernetes" isn't mentioned
 ```
 
 ### 3. TUI (Terminal User Interface)
@@ -308,7 +403,8 @@ sift/
 │   │   ├── mod.rs           # Search orchestration
 │   │   ├── lexical.rs       # FTS5 queries
 │   │   ├── semantic.rs      # Vector similarity
-│   │   └── fusion.rs        # RRF merge, dedup
+│   │   ├── expand.rs        # Query expansion via pseudo-relevance feedback
+│   │   └── fusion.rs        # RRF merge, weighted RRF, dedup
 │   └── tui/
 │       ├── mod.rs           # TUI app state, event loop
 │       ├── search.rs        # Search view
@@ -393,6 +489,12 @@ RRF is a simple, effective algorithm for combining ranked lists.
 - Standard value in literature
 - Works well in practice
 
+**Weighted RRF for query expansion:**
+- Seed results use k=60 (higher weight, more influence)
+- Expansion results use k=80 (lower weight, less influence)
+- Ensures original query results dominate over expansion
+- Expansion adds breadth without diluting precision
+
 ### Why In-Process Model?
 
 Embedding model runs in the same process (via Candle).
@@ -450,23 +552,18 @@ Example: 1000 markdown files, 5MB total text
    - Overlap for context preservation
    - Adaptive chunk sizes based on content
 
-2. **Query expansion**
-   - Synonym expansion
-   - Related term suggestions
-   - Query rewriting
-
-3. **Filters**
+2. **Filters**
    - File type filters
    - Date ranges
    - Source/label filters
    - Custom metadata
 
-4. **Incremental indexing**
+3. **Incremental indexing**
    - Watch mode (inotify/FSEvents)
    - Auto-refresh on file changes
    - Background indexing
 
-5. **Export/Import**
+4. **Export/Import**
    - Share indexes between machines
    - Backup/restore workflows
    - Merge indexes

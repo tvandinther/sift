@@ -33,11 +33,13 @@ fn main() -> Result<()> {
             }
         },
         Some(Command::Config) => cmd_config(&config),
+        Some(Command::Version) => cmd_version(),
         Some(Command::Search {
             query,
             limit,
             lexical_only,
             semantic_only,
+            fast,
             json,
         }) => {
             let mode = if lexical_only {
@@ -48,7 +50,7 @@ fn main() -> Result<()> {
                 search::SearchMode::Hybrid
             };
 
-            cmd_search(&config, query, limit, mode, json, verbose)
+            cmd_search(&config, query, limit, mode, fast, json, verbose)
         }
     }
 }
@@ -195,11 +197,17 @@ fn cmd_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
+fn cmd_version() -> Result<()> {
+    println!("sift {}", env!("CARGO_PKG_VERSION"));
+    Ok(())
+}
+
 fn cmd_search(
     config: &Config,
     query: String,
     limit: usize,
     mode: search::SearchMode,
+    fast: bool,
     json: bool,
     verbose: bool,
 ) -> Result<()> {
@@ -215,10 +223,16 @@ fn cmd_search(
     // Perform search based on mode
     let file_results = match mode {
         search::SearchMode::LexicalOnly => {
+            if verbose && !fast {
+                println!("Query expansion skipped (--lexical-only mode)");
+            }
             let chunk_results = search::lexical::search(&conn, &query, limit * 3)?;
             search::fusion::deduplicate_to_files(chunk_results)
         }
         search::SearchMode::SemanticOnly => {
+            if verbose && !fast {
+                println!("Query expansion skipped (--semantic-only mode)");
+            }
             // Load embedding model
             let model = index::embed::EmbeddingModel::load(&config.model_cache, verbose)?;
 
@@ -229,11 +243,68 @@ fn cmd_search(
             // Load embedding model
             let model = index::embed::EmbeddingModel::load(&config.model_cache, verbose)?;
 
-            let lex_results = search::lexical::search(&conn, &query, limit * 3)?;
-            let sem_results = search::semantic::search(&conn, &model, &query, limit * 3)?;
+            if fast {
+                // Fast mode: single-pass hybrid search
+                if verbose {
+                    println!("Query expansion skipped (--fast)");
+                }
 
-            let merged = search::fusion::merge_results(lex_results, sem_results);
-            search::fusion::deduplicate_to_files(merged)
+                let lex_results = search::lexical::search(&conn, &query, limit * 3)?;
+                let sem_results = search::semantic::search(&conn, &model, &query, limit * 3)?;
+
+                let merged = search::fusion::merge_results(lex_results, sem_results);
+                search::fusion::deduplicate_to_files(merged)
+            } else {
+                // Default: two-phase search with query expansion
+
+                // Phase 1: Seed search with original query
+                let seed_lex = search::lexical::search(&conn, &query, 100)?;
+                let seed_sem = search::semantic::search(&conn, &model, &query, 100)?;
+                let seed_merged = search::fusion::merge_results(seed_lex, seed_sem);
+
+                // Extract top 5 chunks for expansion
+                let top_chunks: Vec<String> = seed_merged
+                    .iter()
+                    .take(5)
+                    .map(|r| r.body.clone())
+                    .collect();
+
+                // Extract expansion terms
+                let expansion_terms = search::expand::extract_expansion_terms(
+                    &top_chunks,
+                    &conn,
+                    &query,
+                )?;
+
+                if verbose && !expansion_terms.is_empty() {
+                    println!("Expanded query with: {}", expansion_terms.join(", "));
+                } else if verbose {
+                    println!("No expansion terms found");
+                }
+
+                // Phase 2: Expansion search with expanded query
+                let expanded_chunk_results = if !expansion_terms.is_empty() {
+                    let expanded_query = format!("{} {}", query, expansion_terms.join(" "));
+
+                    let exp_lex = search::lexical::search(&conn, &expanded_query, 100)?;
+                    let exp_sem = search::semantic::search(&conn, &model, &expanded_query, 100)?;
+
+                    search::fusion::merge_results(exp_lex, exp_sem)
+                } else {
+                    Vec::new()
+                };
+
+                // Merge seed and expansion results with weighted RRF
+                // k=60 for seed (higher weight), k=80 for expansion (lower weight)
+                let final_merged = search::fusion::merge_results_weighted(
+                    seed_merged,
+                    expanded_chunk_results,
+                    60.0,
+                    80.0,
+                );
+
+                search::fusion::deduplicate_to_files(final_merged)
+            }
         }
     };
 

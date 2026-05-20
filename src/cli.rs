@@ -45,10 +45,17 @@ pub enum Command {
         #[arg(long)]
         semantic_only: bool,
 
+        /// Skip query expansion for faster single-pass search
+        #[arg(long)]
+        fast: bool,
+
         /// Output results as JSON
         #[arg(long)]
         json: bool,
     },
+
+    /// Show version information
+    Version,
 }
 
 #[derive(Subcommand)]

@@ -11,11 +11,25 @@ pub fn merge_results(
     lexical_results: Vec<ChunkResult>,
     semantic_results: Vec<ChunkResult>,
 ) -> Vec<ChunkResult> {
+    merge_results_weighted(lexical_results, semantic_results, RRF_CONSTANT, RRF_CONSTANT)
+}
+
+/// Merge two result lists using Reciprocal Rank Fusion (RRF) with weighted k values.
+///
+/// A higher k reduces the influence of rank, so results with higher k are weighted lower.
+///
+/// RRF score for item i: sum(1 / (k + rank_i)) across all rankings.
+pub fn merge_results_weighted(
+    lexical_results: Vec<ChunkResult>,
+    semantic_results: Vec<ChunkResult>,
+    k_lexical: f32,
+    k_semantic: f32,
+) -> Vec<ChunkResult> {
     let mut rrf_scores: HashMap<i64, (ChunkResult, f32, ResultSource)> = HashMap::new();
 
     // Add lexical results
     for (rank, result) in lexical_results.into_iter().enumerate() {
-        let rrf_score = 1.0 / (RRF_CONSTANT + rank as f32 + 1.0);
+        let rrf_score = 1.0 / (k_lexical + rank as f32 + 1.0);
         rrf_scores.insert(
             result.chunk_id,
             (result, rrf_score, ResultSource::Lexical),
@@ -24,7 +38,7 @@ pub fn merge_results(
 
     // Add or merge semantic results
     for (rank, result) in semantic_results.into_iter().enumerate() {
-        let rrf_score = 1.0 / (RRF_CONSTANT + rank as f32 + 1.0);
+        let rrf_score = 1.0 / (k_semantic + rank as f32 + 1.0);
 
         rrf_scores
             .entry(result.chunk_id)
@@ -174,5 +188,35 @@ mod tests {
         let short = "one two three";
         let snippet = extract_snippet(short, 5);
         assert_eq!(snippet, "one two three");
+    }
+
+    #[test]
+    fn test_weighted_rrf() {
+        // Test that seed results (k=60) are weighted higher than expansion results (k=80)
+        let seed_results = vec![
+            make_chunk(1, 1, 10.0, ResultSource::Lexical),
+            make_chunk(2, 2, 9.0, ResultSource::Lexical),
+        ];
+
+        let expansion_results = vec![
+            make_chunk(1, 1, 0.95, ResultSource::Semantic), // Same chunk as seed
+            make_chunk(3, 3, 0.90, ResultSource::Semantic), // New chunk
+        ];
+
+        // Merge with weighted k values: seed=60 (higher weight), expansion=80 (lower weight)
+        let merged = merge_results_weighted(seed_results, expansion_results, 60.0, 80.0);
+
+        // Chunk 1 appears in both, should have highest score
+        // Chunk 2 appears only in seed
+        // Chunk 3 appears only in expansion
+        assert_eq!(merged.len(), 3);
+
+        // Chunk 1 should be first (appears in both)
+        assert_eq!(merged[0].chunk_id, 1);
+        assert_eq!(merged[0].source, ResultSource::Both);
+
+        // Chunk 1's score should be higher than chunk 2's score
+        // (sum of both RRF contributions)
+        assert!(merged[0].score > merged[1].score);
     }
 }

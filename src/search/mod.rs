@@ -1,3 +1,4 @@
+pub mod expand;
 pub mod fusion;
 pub mod lexical;
 pub mod semantic;
