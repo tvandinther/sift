@@ -284,7 +284,12 @@ fn cmd_search(
 
                 // Phase 2: Expansion search with expanded query
                 let expanded_chunk_results = if !expansion_terms.is_empty() {
-                    let expanded_query = format!("{} {}", query, expansion_terms.join(" "));
+                    // Quote each expansion term for FTS5 to prevent column name interpretation
+                    let quoted_terms: Vec<String> = expansion_terms
+                        .iter()
+                        .map(|term| format!("\"{}\"", term.replace("\"", "\"\"")))
+                        .collect();
+                    let expanded_query = format!("{} {}", query, quoted_terms.join(" "));
 
                     let exp_lex = search::lexical::search(&conn, &expanded_query, 100)?;
                     let exp_sem = search::semantic::search(&conn, &model, &expanded_query, 100)?;
