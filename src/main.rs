@@ -1,6 +1,6 @@
 mod cli;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use cli::{Cli, Command};
 use sift::{config::Config, index, search};
@@ -255,25 +255,25 @@ fn cmd_search(
                 let merged = search::fusion::merge_results(lex_results, sem_results);
                 search::fusion::deduplicate_to_files(merged)
             } else {
-                // Default: two-phase search with query expansion
+                // Default: two-phase search with semantic term expansion
+
+                // Embed query once; reuse for both semantic search and term expansion
+                let query_embedding = model
+                    .embed(&query)
+                    .context("Failed to generate query embedding")?;
 
                 // Phase 1: Seed search with original query
                 let seed_lex = search::lexical::search(&conn, &query, 100)?;
-                let seed_sem = search::semantic::search(&conn, &model, &query, 100)?;
+                let seed_sem =
+                    search::semantic::search_by_embedding(&conn, &query_embedding, 100)?;
                 let seed_merged = search::fusion::merge_results(seed_lex, seed_sem);
 
-                // Extract top 5 chunks for expansion
-                let top_chunks: Vec<String> = seed_merged
-                    .iter()
-                    .take(5)
-                    .map(|r| r.body.clone())
-                    .collect();
-
-                // Extract expansion terms
-                let expansion_terms = search::expand::extract_expansion_terms(
-                    &top_chunks,
+                // Find nearest-neighbour terms in the vocabulary embedding space
+                let expansion_terms = search::expand::find_expansion_terms_by_embedding(
+                    &query_embedding,
                     &conn,
                     &query,
+                    10,
                 )?;
 
                 if verbose && !expansion_terms.is_empty() {
@@ -282,7 +282,7 @@ fn cmd_search(
                     println!("No expansion terms found");
                 }
 
-                // Phase 2: Expansion search with expanded query
+                // Phase 2: Expansion search with nearest-neighbour terms appended
                 let expanded_chunk_results = if !expansion_terms.is_empty() {
                     // Quote each expansion term for FTS5 to prevent column name interpretation
                     let quoted_terms: Vec<String> = expansion_terms
@@ -292,7 +292,8 @@ fn cmd_search(
                     let expanded_query = format!("{} {}", query, quoted_terms.join(" "));
 
                     let exp_lex = search::lexical::search(&conn, &expanded_query, 100)?;
-                    let exp_sem = search::semantic::search(&conn, &model, &expanded_query, 100)?;
+                    let exp_sem =
+                        search::semantic::search_by_embedding(&conn, &query_embedding, 100)?;
 
                     search::fusion::merge_results(exp_lex, exp_sem)
                 } else {

@@ -11,10 +11,16 @@ pub fn search(
     query: &str,
     limit: usize,
 ) -> Result<Vec<ChunkResult>> {
-    // Generate embedding for query
     let query_embedding = model.embed(query).context("Failed to generate query embedding")?;
+    search_by_embedding(conn, &query_embedding, limit)
+}
 
-    // Load all chunk embeddings and compute similarity
+/// Perform semantic search using a pre-computed query embedding.
+pub fn search_by_embedding(
+    conn: &Connection,
+    query_embedding: &[f32],
+    limit: usize,
+) -> Result<Vec<ChunkResult>> {
     let mut stmt = conn.prepare(
         r#"
         SELECT
@@ -39,14 +45,12 @@ pub fn search(
             let body: String = row.get(4)?;
             let embedding_blob: Vec<u8> = row.get(5)?;
 
-            // Decode embedding from BLOB
             let embedding: Vec<f32> = embedding_blob
                 .chunks_exact(4)
                 .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                 .collect();
 
-            // Compute cosine similarity
-            let similarity = cosine_similarity(&query_embedding, &embedding);
+            let similarity = cosine_similarity(query_embedding, &embedding);
 
             Ok(ChunkResult {
                 chunk_id,
@@ -60,7 +64,6 @@ pub fn search(
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    // Sort by similarity (descending) and take top K
     results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
     results.truncate(limit);
 

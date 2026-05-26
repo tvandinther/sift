@@ -97,6 +97,11 @@ pub fn run_index(
         println!();
     }
 
+    // Update the term vocabulary for embedding-based query expansion
+    if let Some(model) = &embedding_model {
+        build_term_vocab(conn, model, verbose)?;
+    }
+
     Ok(stats)
 }
 
@@ -173,6 +178,102 @@ fn index_file(
     } else {
         Ok(FileIndexResult::Updated)
     }
+}
+
+const VOCAB_STOP_WORDS: &[&str] = &[
+    "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was", "one",
+    "our", "out", "day", "get", "has", "him", "his", "how", "its", "may", "new", "now", "old",
+    "see", "two", "who", "did", "use", "way", "with", "this", "that", "from", "they", "will",
+    "have", "been", "when", "what", "your", "each", "she", "there", "their", "which", "also",
+    "into", "more", "than", "then", "them", "these", "some", "would", "other", "about", "after",
+];
+
+/// Build or update the term vocabulary index with embeddings.
+///
+/// Extracts all unique meaningful tokens from indexed chunks, generates embeddings
+/// for any new terms, and prunes embeddings for terms that no longer appear.
+pub fn build_term_vocab(
+    conn: &Connection,
+    embedding_model: &embed::EmbeddingModel,
+    verbose: bool,
+) -> Result<()> {
+    let bodies = db::get_all_chunk_bodies(conn)?;
+    if bodies.is_empty() {
+        return Ok(());
+    }
+
+    let vocab_terms = extract_vocab_terms(&bodies);
+    if vocab_terms.is_empty() {
+        return Ok(());
+    }
+
+    let existing = db::get_indexed_term_vocabulary(conn)?;
+    let new_terms: Vec<&String> = vocab_terms.iter().filter(|t| !existing.contains(*t)).collect();
+
+    if !new_terms.is_empty() {
+        if verbose || new_terms.len() > 50 {
+            println!(
+                "Building semantic term vocabulary ({} new terms)...",
+                new_terms.len()
+            );
+        }
+
+        for (i, term) in new_terms.iter().enumerate() {
+            if new_terms.len() > 100 && i % 100 == 0 {
+                print!("\r  [{}/{}] embedding terms...", i, new_terms.len());
+                std::io::Write::flush(&mut std::io::stdout())?;
+            }
+
+            match embedding_model.embed(term) {
+                Ok(embedding) => {
+                    db::upsert_term_embedding(conn, term, &embedding)?;
+                }
+                Err(e) => {
+                    if verbose {
+                        eprintln!("\nWarning: failed to embed term '{}': {}", term, e);
+                    }
+                }
+            }
+        }
+
+        if new_terms.len() > 100 {
+            println!();
+        }
+    }
+
+    let valid_set: std::collections::HashSet<String> = vocab_terms.into_iter().collect();
+    let pruned = db::prune_term_vocab(conn, &valid_set)?;
+    if verbose && pruned > 0 {
+        println!("Pruned {} stale term embeddings.", pruned);
+    }
+
+    Ok(())
+}
+
+/// Extract unique meaningful tokens from a list of text bodies.
+fn extract_vocab_terms(bodies: &[String]) -> Vec<String> {
+    use std::collections::HashSet;
+
+    let stop_words: HashSet<&str> = VOCAB_STOP_WORDS.iter().cloned().collect();
+    let mut unique: HashSet<String> = HashSet::new();
+
+    for body in bodies {
+        for word in body.split_whitespace() {
+            let term: String = word
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase();
+
+            if term.len() >= 3
+                && !stop_words.contains(term.as_str())
+                && term.chars().all(|c| c.is_alphanumeric())
+                && term.chars().any(|c| c.is_alphabetic())
+            {
+                unique.insert(term);
+            }
+        }
+    }
+
+    unique.into_iter().collect()
 }
 
 /// Collect all files under a path, respecting .gitignore.
@@ -334,6 +435,11 @@ pub fn run_refresh(
                 }
             }
         }
+    }
+
+    // Update term vocabulary for embedding-based query expansion
+    if let Some(model) = &embedding_model {
+        build_term_vocab(conn, model, verbose)?;
     }
 
     Ok(stats)

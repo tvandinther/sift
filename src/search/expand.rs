@@ -145,6 +145,59 @@ fn compute_idf(
     Ok(idf_scores)
 }
 
+/// Find expansion terms by nearest-neighbour lookup in the term vocabulary embedding space.
+///
+/// Embeds the query, finds the top `n` nearest terms in the pre-built vocabulary index,
+/// and returns them after filtering out query terms and stop words.
+/// Returns an empty vec if the vocabulary is not yet built.
+pub fn find_expansion_terms_by_embedding(
+    query_embedding: &[f32],
+    conn: &Connection,
+    original_query: &str,
+    n: usize,
+) -> Result<Vec<String>> {
+    let term_embeddings = crate::index::db::load_term_embeddings(conn)?;
+
+    if term_embeddings.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let query_tokens: std::collections::HashSet<String> = tokenize(original_query)
+        .into_iter()
+        .map(|s| s.to_lowercase())
+        .collect();
+
+    let mut scored: Vec<(String, f32)> = term_embeddings
+        .into_iter()
+        .filter_map(|(term, embedding)| {
+            if query_tokens.contains(&term) || STOP_WORDS.contains(&term.as_str()) {
+                return None;
+            }
+            if embedding.len() != query_embedding.len() {
+                return None;
+            }
+            let sim = embedding_cosine_similarity(query_embedding, &embedding);
+            Some((term, sim))
+        })
+        .collect();
+
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    Ok(scored.into_iter().take(n).map(|(t, _)| t).collect())
+}
+
+fn embedding_cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return 0.0;
+    }
+
+    dot / (norm_a * norm_b)
+}
+
 /// Simple tokenizer: split on whitespace and strip punctuation.
 fn tokenize(text: &str) -> Vec<String> {
     text.split_whitespace()
