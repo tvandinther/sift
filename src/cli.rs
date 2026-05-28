@@ -103,5 +103,9 @@ pub enum IndexCommand {
         /// Re-generate embeddings even if content hash unchanged
         #[arg(long)]
         force_embeddings: bool,
+
+        /// Rebuild term vocabulary embeddings from scratch (only when refreshing all sources)
+        #[arg(long)]
+        rebuild_vocab: bool,
     },
 }

@@ -90,6 +90,11 @@ fn init_schema(conn: &Connection) -> Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON chunk_embeddings(chunk_id);
+
+        CREATE TABLE IF NOT EXISTS term_embeddings (
+            term        TEXT PRIMARY KEY,
+            embedding   BLOB NOT NULL
+        );
         "#
     )?;
 
@@ -310,6 +315,87 @@ pub fn get_source_by_identifier(conn: &Connection, identifier: &str) -> Result<O
 pub fn delete_file(conn: &Connection, path: &str) -> Result<()> {
     conn.execute("DELETE FROM files WHERE path = ?1", params![path])?;
     Ok(())
+}
+
+/// Upsert an embedding for a vocabulary term.
+pub fn upsert_term_embedding(conn: &Connection, term: &str, embedding: &[f32]) -> Result<()> {
+    let embedding_bytes: Vec<u8> = embedding
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+
+    conn.execute(
+        "INSERT INTO term_embeddings (term, embedding) VALUES (?1, ?2)
+         ON CONFLICT(term) DO UPDATE SET embedding = ?2",
+        params![term, embedding_bytes],
+    )?;
+
+    Ok(())
+}
+
+/// Load all term embeddings from the vocabulary index.
+pub fn load_term_embeddings(conn: &Connection) -> Result<Vec<(String, Vec<f32>)>> {
+    let mut stmt = conn.prepare("SELECT term, embedding FROM term_embeddings")?;
+
+    let result = stmt
+        .query_map([], |row| {
+            let term: String = row.get(0)?;
+            let blob: Vec<u8> = row.get(1)?;
+            Ok((term, blob))
+        })?
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(|(term, blob)| {
+            let embedding: Vec<f32> = blob
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect();
+            (term, embedding)
+        })
+        .collect();
+
+    Ok(result)
+}
+
+/// Get the set of terms currently in the vocabulary index.
+pub fn get_indexed_term_vocabulary(conn: &Connection) -> Result<std::collections::HashSet<String>> {
+    let mut stmt = conn.prepare("SELECT term FROM term_embeddings")?;
+    let terms = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<std::collections::HashSet<String>, _>>()?;
+    Ok(terms)
+}
+
+/// Load all chunk bodies for vocabulary extraction.
+pub fn get_all_chunk_bodies(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT body FROM chunks")?;
+    let bodies = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<Vec<String>, _>>()?;
+    Ok(bodies)
+}
+
+/// Remove term embeddings whose terms are not in the provided set.
+pub fn prune_term_vocab(
+    conn: &Connection,
+    valid_terms: &std::collections::HashSet<String>,
+) -> Result<usize> {
+    let current: Vec<String> = conn
+        .prepare("SELECT term FROM term_embeddings")?
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut removed = 0;
+    for term in current {
+        if !valid_terms.contains(&term) {
+            conn.execute(
+                "DELETE FROM term_embeddings WHERE term = ?1",
+                params![term],
+            )?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
 }
 
 /// Insert an embedding vector for a chunk.

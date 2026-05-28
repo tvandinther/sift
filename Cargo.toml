@@ -8,9 +8,9 @@ clap = { version = "4.5", features = ["derive"] }
 ratatui = "0.29"
 crossterm = "0.28"
 rusqlite = { version = "0.32", features = ["bundled"] }
-candle-core = "0.8"
-candle-transformers = "0.8"
-candle-nn = "0.8"
+candle-core = { version = "0.8", features = ["metal"] }
+candle-transformers = { version = "0.8", features = ["metal"] }
+candle-nn = { version = "0.8", features = ["metal"] }
 tokenizers = "0.20"
 ureq = "2.10"
 serde = { version = "1.0", features = ["derive"] }
