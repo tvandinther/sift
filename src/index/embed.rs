@@ -34,8 +34,10 @@ impl EmbeddingModel {
         // Detect device (Metal on Apple Silicon, CPU otherwise)
         let device = Self::detect_device()?;
 
+        println!("Loading embedding model on {:?}...", device);
         if verbose {
-            println!("Loading embedding model on {:?}...", device);
+            println!("  (Metal GPU acceleration is {})",
+                if matches!(device, Device::Metal(_)) { "enabled" } else { "not available - using CPU" });
         }
 
         let model_dir = Self::model_dir(model_cache);

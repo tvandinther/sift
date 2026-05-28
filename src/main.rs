@@ -28,8 +28,8 @@ fn main() -> Result<()> {
                 cmd_index_delete(&config, &path_or_label, yes)
             }
             cli::IndexCommand::Prune => cmd_index_prune(&config),
-            cli::IndexCommand::Refresh { source, force_embeddings } => {
-                cmd_index_refresh(&config, source.as_deref(), force_embeddings, verbose)
+            cli::IndexCommand::Refresh { source, force_embeddings, rebuild_vocab } => {
+                cmd_index_refresh(&config, source.as_deref(), force_embeddings, rebuild_vocab, verbose)
             }
         },
         Some(Command::Config) => cmd_config(&config),
@@ -171,6 +171,7 @@ fn cmd_index_refresh(
     config: &Config,
     source: Option<&str>,
     force_embeddings: bool,
+    rebuild_vocab: bool,
     verbose: bool,
 ) -> Result<()> {
     let conn = index::db::open_connection(&config.db_path)?;
@@ -182,7 +183,12 @@ fn cmd_index_refresh(
         return Ok(());
     }
 
-    let stats = index::run_refresh(&conn, source, force_embeddings, &config.model_cache, verbose)?;
+    // --rebuild-vocab only makes sense when refreshing ALL sources
+    if rebuild_vocab && source.is_some() {
+        bail!("--rebuild-vocab can only be used when refreshing all sources (don't specify a source).\nThe term vocabulary is a global index built from all sources.");
+    }
+
+    let stats = index::run_refresh(&conn, source, force_embeddings, rebuild_vocab, &config.model_cache, verbose)?;
 
     println!(
         "\nRefresh complete — {} scanned, {} added, {} updated, {} unchanged, {} removed, {} failed",

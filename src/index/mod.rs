@@ -99,7 +99,7 @@ pub fn run_index(
 
     // Update the term vocabulary for embedding-based query expansion
     if let Some(model) = &embedding_model {
-        build_term_vocab(conn, model, verbose)?;
+        build_term_vocab(conn, model, false, verbose)?;
     }
 
     Ok(stats)
@@ -192,9 +192,12 @@ const VOCAB_STOP_WORDS: &[&str] = &[
 ///
 /// Extracts all unique meaningful tokens from indexed chunks, generates embeddings
 /// for any new terms, and prunes embeddings for terms that no longer appear.
+///
+/// If `rebuild` is true, all existing term embeddings are deleted and regenerated from scratch.
 pub fn build_term_vocab(
     conn: &Connection,
     embedding_model: &embed::EmbeddingModel,
+    rebuild: bool,
     verbose: bool,
 ) -> Result<()> {
     let bodies = db::get_all_chunk_bodies(conn)?;
@@ -205,6 +208,14 @@ pub fn build_term_vocab(
     let vocab_terms = extract_vocab_terms(&bodies);
     if vocab_terms.is_empty() {
         return Ok(());
+    }
+
+    // If rebuilding, clear all existing term embeddings
+    if rebuild {
+        let deleted = conn.execute("DELETE FROM term_embeddings", [])?;
+        if verbose || deleted > 0 {
+            println!("Cleared {} existing term embeddings for rebuild", deleted);
+        }
     }
 
     let existing = db::get_indexed_term_vocabulary(conn)?;
@@ -218,10 +229,16 @@ pub fn build_term_vocab(
             );
         }
 
+        let start_time = std::time::Instant::now();
+        let mut last_update = start_time;
+
         for (i, term) in new_terms.iter().enumerate() {
-            if new_terms.len() > 100 && i % 100 == 0 {
-                print!("\r  [{}/{}] embedding terms...", i, new_terms.len());
+            // Show progress every 100ms (or first/last item)
+            let now = std::time::Instant::now();
+            if i == 0 || now.duration_since(last_update).as_millis() >= 100 || i + 1 == new_terms.len() {
+                print!("\r  [{}/{}] embedding terms...", i + 1, new_terms.len());
                 std::io::Write::flush(&mut std::io::stdout())?;
+                last_update = now;
             }
 
             match embedding_model.embed(term) {
@@ -236,7 +253,7 @@ pub fn build_term_vocab(
             }
         }
 
-        if new_terms.len() > 100 {
+        if new_terms.len() > 0 {
             println!();
         }
     }
@@ -324,6 +341,7 @@ pub fn run_refresh(
     conn: &Connection,
     source_identifier: Option<&str>,
     force_embeddings: bool,
+    rebuild_vocab: bool,
     model_cache: &Path,
     verbose: bool,
 ) -> Result<RefreshStats> {
@@ -439,7 +457,7 @@ pub fn run_refresh(
 
     // Update term vocabulary for embedding-based query expansion
     if let Some(model) = &embedding_model {
-        build_term_vocab(conn, model, verbose)?;
+        build_term_vocab(conn, model, rebuild_vocab, verbose)?;
     }
 
     Ok(stats)
