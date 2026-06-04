@@ -12,10 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: DeterminateSystems/nix-installer-action@v14
+      - uses: nix-community/cache-nix-action@v5
         with:
-          components: rustfmt
-      - run: cargo fmt --check
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+      - run: nix develop --command cargo fmt --check
 
   clippy:
     name: Clippy
@@ -23,11 +25,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: DeterminateSystems/nix-installer-action@v14
+      - uses: nix-community/cache-nix-action@v5
         with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets -- -D warnings
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+      - run: nix develop --command cargo clippy --all-targets -- -D warnings
 
   build:
     name: Build and test
