@@ -94,19 +94,33 @@ mod tests {
         conn.execute(
             "INSERT INTO files (source_id, path, checksum, indexed_at, size_bytes, chunk_count)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![source_id, "/test/file1.txt", "abc123", "2024-01-01T00:00:00Z", 100, 1],
+            params![
+                source_id,
+                "/test/file1.txt",
+                "abc123",
+                "2024-01-01T00:00:00Z",
+                100,
+                1
+            ],
         )?;
         let file_id = conn.last_insert_rowid();
 
         conn.execute(
             "INSERT INTO chunks (file_id, seq, body) VALUES (?1, ?2, ?3)",
-            params![file_id, 0, "This is a test document about Kubernetes and containers"],
+            params![
+                file_id,
+                0,
+                "This is a test document about Kubernetes and containers"
+            ],
         )?;
         let chunk_id = conn.last_insert_rowid();
 
         conn.execute(
             "INSERT INTO chunks_fts (rowid, body) VALUES (?1, ?2)",
-            params![chunk_id, "This is a test document about Kubernetes and containers"],
+            params![
+                chunk_id,
+                "This is a test document about Kubernetes and containers"
+            ],
         )?;
 
         // Search

@@ -128,13 +128,9 @@ fn compute_idf(
         let quoted_term = format!("\"{}\"", term.replace("\"", "\"\""));
 
         // Query FTS5 for document frequency
-        let doc_count: i64 = match stmt.query_row(params![quoted_term], |row| row.get(0)) {
-            Ok(count) => count,
-            Err(_) => {
-                // If the query fails (e.g., invalid FTS5 syntax), assume the term doesn't exist
-                0
-            }
-        };
+        let doc_count: i64 = stmt
+            .query_row(params![quoted_term], |row| row.get(0))
+            .unwrap_or_default();
 
         // Compute IDF: ln(total / (1 + doc_count))
         let idf = ((total_chunks as f64) / (1.0 + doc_count as f64)).ln();
@@ -356,7 +352,10 @@ mod tests {
         // Should only include terms >= 3 characters
         assert!(!expansion_terms.contains(&"a".to_string()));
         assert!(!expansion_terms.contains(&"bb".to_string()));
-        assert!(expansion_terms.contains(&"ccc".to_string()) || expansion_terms.contains(&"dddd".to_string()));
+        assert!(
+            expansion_terms.contains(&"ccc".to_string())
+                || expansion_terms.contains(&"dddd".to_string())
+        );
 
         Ok(())
     }

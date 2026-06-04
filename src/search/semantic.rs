@@ -11,7 +11,9 @@ pub fn search(
     query: &str,
     limit: usize,
 ) -> Result<Vec<ChunkResult>> {
-    let query_embedding = model.embed(query).context("Failed to generate query embedding")?;
+    let query_embedding = model
+        .embed(query)
+        .context("Failed to generate query embedding")?;
     search_by_embedding(conn, &query_embedding, limit)
 }
 

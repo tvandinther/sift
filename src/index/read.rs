@@ -97,7 +97,7 @@ mod tests {
     #[test]
     fn test_chunk_text_preserves_word_boundaries() {
         let text = "one two three four five";
-        let chunks = chunk_text(&text);
+        let chunks = chunk_text(text);
         assert_eq!(chunks.len(), 1);
         assert!(chunks[0].contains("one two three four five"));
     }

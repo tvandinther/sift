@@ -51,7 +51,7 @@ fn test_index_fixtures() -> Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk_id ON chunk_embeddings(chunk_id);
-        "#
+        "#,
     )?;
 
     // Get the fixtures directory path
@@ -63,7 +63,15 @@ fn test_index_fixtures() -> Result<()> {
     let model_cache = PathBuf::from("/tmp/sift-test-models");
 
     // Index the fixtures (without embeddings for speed)
-    let stats = index::run_index(&conn, &[fixtures_path.clone()], None, false, false, &model_cache, false)?;
+    let stats = index::run_index(
+        &conn,
+        std::slice::from_ref(&fixtures_path),
+        None,
+        false,
+        false,
+        &model_cache,
+        false,
+    )?;
 
     // Verify that files were indexed
     assert!(stats.scanned > 0, "Should have scanned files");
@@ -77,9 +85,7 @@ fn test_index_fixtures() -> Result<()> {
     assert!(sources[0].total_size_bytes > 0, "Source should have size");
 
     // Test FTS search for a term that appears in the fixtures
-    let mut stmt = conn.prepare(
-        "SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH ?1"
-    )?;
+    let mut stmt = conn.prepare("SELECT COUNT(*) FROM chunks_fts WHERE chunks_fts MATCH ?1")?;
     let count: i64 = stmt.query_row(["crossplane"], |row| row.get(0))?;
     assert!(count > 0, "Should find results for 'crossplane'");
 
@@ -89,7 +95,10 @@ fn test_index_fixtures() -> Result<()> {
 
     // Run gc and verify nothing is removed (all files still exist)
     let gc_summary = index::db::gc(&conn)?;
-    assert_eq!(gc_summary.files_removed, 0, "GC should not remove existing files");
+    assert_eq!(
+        gc_summary.files_removed, 0,
+        "GC should not remove existing files"
+    );
 
     // Get the source path for deletion
     let source_path = sources[0].path.clone();
@@ -100,14 +109,14 @@ fn test_index_fixtures() -> Result<()> {
 
     // Verify source is gone
     let sources_after = index::db::list_sources(&conn)?;
-    assert_eq!(sources_after.len(), 0, "Should have no sources after deletion");
+    assert_eq!(
+        sources_after.len(),
+        0,
+        "Should have no sources after deletion"
+    );
 
     // Verify files are gone (cascade delete)
-    let file_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM files",
-        [],
-        |row| row.get(0)
-    )?;
+    let file_count: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))?;
     assert_eq!(file_count, 0, "All files should be deleted via cascade");
 
     Ok(())
@@ -134,7 +143,10 @@ fn test_chunking_edge_cases() -> Result<()> {
     // Large text requiring multiple chunks
     let large_text = "word ".repeat(1000);
     let chunks = chunk_text(&large_text);
-    assert!(chunks.len() > 1, "Large text should produce multiple chunks");
+    assert!(
+        chunks.len() > 1,
+        "Large text should produce multiple chunks"
+    );
 
     Ok(())
 }

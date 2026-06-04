@@ -150,7 +150,12 @@ impl App {
         Ok(())
     }
 
-    fn handle_indexes_keys(&mut self, key: KeyCode, conn: &Connection, model_cache: &Path) -> Result<()> {
+    fn handle_indexes_keys(
+        &mut self,
+        key: KeyCode,
+        conn: &Connection,
+        model_cache: &Path,
+    ) -> Result<()> {
         // If in delete confirmation mode
         if self.indexes_view.confirm_delete.is_some() {
             match key {
@@ -213,7 +218,11 @@ impl App {
         }
     }
 
-    fn view_in_pager(&mut self, path: &Path, terminal: &mut Terminal<impl ratatui::backend::Backend>) -> Result<()> {
+    fn view_in_pager(
+        &mut self,
+        path: &Path,
+        terminal: &mut Terminal<impl ratatui::backend::Backend>,
+    ) -> Result<()> {
         // Check if file exists first
         if !path.exists() {
             anyhow::bail!("File not found: {}", path.display());
@@ -258,8 +267,16 @@ impl App {
 
         match result {
             Ok(status) if status.success() => Ok(()),
-            Ok(status) => anyhow::bail!("Pager '{}' exited with code: {:?}", pager_env, status.code()),
-            Err(e) => anyhow::bail!("Failed to execute pager '{}': {} (try setting PAGER env var)", pager_env, e),
+            Ok(status) => anyhow::bail!(
+                "Pager '{}' exited with code: {:?}",
+                pager_env,
+                status.code()
+            ),
+            Err(e) => anyhow::bail!(
+                "Failed to execute pager '{}': {} (try setting PAGER env var)",
+                pager_env,
+                e
+            ),
         }
     }
 
@@ -369,7 +386,13 @@ pub fn run(conn: &Connection, model_cache: &Path) -> Result<()> {
     app.indexes_view.refresh(conn)?;
 
     // Run event loop
-    let result = run_app(&mut terminal, &mut app, conn, model_cache, source_count as usize);
+    let result = run_app(
+        &mut terminal,
+        &mut app,
+        conn,
+        model_cache,
+        source_count as usize,
+    );
 
     // Restore terminal
     disable_raw_mode()?;
@@ -407,14 +430,16 @@ fn run_app<B: ratatui::backend::Backend>(
         // Handle pending pager
         if let Some(path) = app.pending_pager.take() {
             if let Err(e) = app.view_in_pager(&path, terminal) {
-                app.search_view.set_error(format!("Error opening file: {}", e));
+                app.search_view
+                    .set_error(format!("Error opening file: {}", e));
             }
         }
 
         // Handle pending system open
         if let Some(path) = app.pending_system_open.take() {
             if let Err(e) = app.open_with_system(&path) {
-                app.search_view.set_error(format!("Error opening file: {}", e));
+                app.search_view
+                    .set_error(format!("Error opening file: {}", e));
             }
         }
 

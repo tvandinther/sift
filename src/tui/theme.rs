@@ -40,7 +40,9 @@ pub fn help() -> Style {
 
 /// Header text.
 pub fn header() -> Style {
-    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+    Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD)
 }
 
 /// Border style.

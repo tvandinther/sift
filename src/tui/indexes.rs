@@ -18,6 +18,12 @@ pub struct IndexesView {
     is_error: bool,
 }
 
+impl Default for IndexesView {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IndexesView {
     pub fn new() -> Self {
         Self {
@@ -122,9 +128,16 @@ impl IndexesView {
                 }
 
                 if removed == 0 {
-                    self.message = Some(format!("No files to remove from '{}'", source.label.as_deref().unwrap_or(&source.path)));
+                    self.message = Some(format!(
+                        "No files to remove from '{}'",
+                        source.label.as_deref().unwrap_or(&source.path)
+                    ));
                 } else {
-                    self.message = Some(format!("Removed {} files from '{}'", removed, source.label.as_deref().unwrap_or(&source.path)));
+                    self.message = Some(format!(
+                        "Removed {} files from '{}'",
+                        removed,
+                        source.label.as_deref().unwrap_or(&source.path)
+                    ));
                 }
                 self.is_error = false;
                 self.refresh(conn)?;
@@ -157,7 +170,11 @@ impl IndexesView {
     }
 
     /// Refresh selected source.
-    pub fn refresh_selected(&mut self, conn: &Connection, model_cache: &std::path::Path) -> Result<()> {
+    pub fn refresh_selected(
+        &mut self,
+        conn: &Connection,
+        model_cache: &std::path::Path,
+    ) -> Result<()> {
         if let Some(i) = self.list_state.selected() {
             if let Some(source) = self.sources.get(i) {
                 let identifier = source.label.as_deref().unwrap_or(&source.path);
@@ -259,15 +276,13 @@ impl IndexesView {
                         Span::raw("  "),
                         Span::styled(format!("{:<12}", truncate(label, 12)), theme::snippet()),
                     ]),
-                    Line::from(vec![
-                        Span::styled(
-                            format!(
-                                "{} files  {}  {}  {}",
-                                source.file_count, size, embeddings, indexed
-                            ),
-                            theme::help(),
+                    Line::from(vec![Span::styled(
+                        format!(
+                            "{} files  {}  {}  {}",
+                            source.file_count, size, embeddings, indexed
                         ),
-                    ]),
+                        theme::help(),
+                    )]),
                 ];
 
                 ListItem::new(content)
@@ -291,9 +306,11 @@ impl IndexesView {
             if let Some(source) = self.sources.get(i) {
                 let identifier = source.label.as_deref().unwrap_or(&source.path);
                 let msg = format!("Delete '{}'? [y/n]", identifier);
-                let confirmation = Paragraph::new(msg)
-                    .style(theme::error())
-                    .block(Block::default().borders(Borders::ALL).border_style(theme::error()));
+                let confirmation = Paragraph::new(msg).style(theme::error()).block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(theme::error()),
+                );
                 frame.render_widget(confirmation, area);
             }
         }

@@ -75,7 +75,12 @@ pub fn run_index(
         println!("Indexing {} files from {}...", total_files, canonical_str);
 
         for (i, file_path) in files.iter().enumerate() {
-            print!("\r[{}/{}] indexing {}    ", i + 1, total_files, file_path.display());
+            print!(
+                "\r[{}/{}] indexing {}    ",
+                i + 1,
+                total_files,
+                file_path.display()
+            );
             std::io::Write::flush(&mut std::io::stdout())?;
 
             match index_file(conn, source_id, file_path, embedding_model.as_ref()) {
@@ -153,7 +158,14 @@ fn index_file(
     let is_new = db::get_file_checksum(conn, &canonical_str)?.is_none();
 
     // Upsert file
-    let file_id = db::upsert_file(conn, source_id, &canonical_str, &checksum, size_bytes, chunk_count)?;
+    let file_id = db::upsert_file(
+        conn,
+        source_id,
+        &canonical_str,
+        &checksum,
+        size_bytes,
+        chunk_count,
+    )?;
 
     // Insert chunks and embeddings
     for (seq, chunk_body) in chunks.iter().enumerate() {
@@ -167,7 +179,10 @@ fn index_file(
                     db::insert_embedding(conn, chunk_id, &embedding)?;
                 }
                 Err(e) => {
-                    eprintln!("\nWarning: failed to generate embedding for chunk {}: {}", chunk_id, e);
+                    eprintln!(
+                        "\nWarning: failed to generate embedding for chunk {}: {}",
+                        chunk_id, e
+                    );
                 }
             }
         }
@@ -219,7 +234,10 @@ pub fn build_term_vocab(
     }
 
     let existing = db::get_indexed_term_vocabulary(conn)?;
-    let new_terms: Vec<&String> = vocab_terms.iter().filter(|t| !existing.contains(*t)).collect();
+    let new_terms: Vec<&String> = vocab_terms
+        .iter()
+        .filter(|t| !existing.contains(*t))
+        .collect();
 
     if !new_terms.is_empty() {
         if verbose || new_terms.len() > 50 {
@@ -235,7 +253,10 @@ pub fn build_term_vocab(
         for (i, term) in new_terms.iter().enumerate() {
             // Show progress every 100ms (or first/last item)
             let now = std::time::Instant::now();
-            if i == 0 || now.duration_since(last_update).as_millis() >= 100 || i + 1 == new_terms.len() {
+            if i == 0
+                || now.duration_since(last_update).as_millis() >= 100
+                || i + 1 == new_terms.len()
+            {
                 print!("\r  [{}/{}] embedding terms...", i + 1, new_terms.len());
                 std::io::Write::flush(&mut std::io::stdout())?;
                 last_update = now;
@@ -253,7 +274,7 @@ pub fn build_term_vocab(
             }
         }
 
-        if new_terms.len() > 0 {
+        if !new_terms.is_empty() {
             println!();
         }
     }
@@ -302,9 +323,7 @@ fn collect_files(path: &Path, include_hidden: bool) -> Result<Vec<PathBuf>> {
         return Ok(files);
     }
 
-    let walker = WalkBuilder::new(path)
-        .hidden(!include_hidden)
-        .build();
+    let walker = WalkBuilder::new(path).hidden(!include_hidden).build();
 
     for entry in walker {
         let entry = entry?;
@@ -364,16 +383,17 @@ pub fn run_refresh(
     };
 
     // Load embedding model if needed
-    let needs_embeddings = force_embeddings || {
-        // Check if any source has embeddings - if so, maintain them
-        sources_to_refresh.iter().any(|(id, _, _)| {
+    let needs_embeddings = force_embeddings
+        || {
+            // Check if any source has embeddings - if so, maintain them
+            sources_to_refresh.iter().any(|(id, _, _)| {
             conn.query_row(
                 "SELECT COUNT(*) FROM chunk_embeddings WHERE chunk_id IN (SELECT c.id FROM chunks c JOIN files f ON f.id = c.file_id WHERE f.source_id = ?1)",
                 params![id],
                 |row| row.get::<_, i64>(0)
             ).unwrap_or(0) > 0
         })
-    };
+        };
 
     let embedding_model = if needs_embeddings {
         match embed::EmbeddingModel::load(model_cache, verbose) {
@@ -410,7 +430,11 @@ pub fn run_refresh(
         let disk_files = collect_files(&canonical_path, false)?;
         let disk_files_set: std::collections::HashSet<String> = disk_files
             .iter()
-            .filter_map(|p| normalize_path(p).ok().and_then(|pb| path_to_string(&pb).ok()))
+            .filter_map(|p| {
+                normalize_path(p)
+                    .ok()
+                    .and_then(|pb| path_to_string(&pb).ok())
+            })
             .collect();
 
         // Process files on disk

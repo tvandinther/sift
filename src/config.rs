@@ -28,10 +28,10 @@ impl Config {
         // Try to load from config file
         let config_path = expand_home("~/.config/sift/config.toml");
         if config_path.exists() {
-            let contents = std::fs::read_to_string(&config_path)
-                .context("Failed to read config file")?;
-            let file_config: Config = toml::from_str(&contents)
-                .context("Failed to parse config file")?;
+            let contents =
+                std::fs::read_to_string(&config_path).context("Failed to read config file")?;
+            let file_config: Config =
+                toml::from_str(&contents).context("Failed to parse config file")?;
             config = file_config;
         }
 
