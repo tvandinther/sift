@@ -60,7 +60,7 @@
         packages = {
           default = pkgs.rustPlatform.buildRustPackage {
             pname = "sift";
-            version = "0.1.1";
+            version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
 
             src = ./.;
 
