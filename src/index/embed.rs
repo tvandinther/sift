@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config as BertConfig};
-use tokenizers::Tokenizer;
 use std::path::Path;
+use tokenizers::Tokenizer;
 
 const MODEL_NAME: &str = "sentence-transformers/all-MiniLM-L6-v2";
 const BASE_URL: &str = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main";
@@ -36,8 +36,14 @@ impl EmbeddingModel {
 
         println!("Loading embedding model on {:?}...", device);
         if verbose {
-            println!("  (Metal GPU acceleration is {})",
-                if matches!(device, Device::Metal(_)) { "enabled" } else { "not available - using CPU" });
+            println!(
+                "  (Metal GPU acceleration is {})",
+                if matches!(device, Device::Metal(_)) {
+                    "enabled"
+                } else {
+                    "not available - using CPU"
+                }
+            );
         }
 
         let model_dir = Self::model_dir(model_cache);
@@ -59,7 +65,9 @@ impl EmbeddingModel {
             io::stdin().read_line(&mut response)?;
 
             if !response.trim().eq_ignore_ascii_case("y") {
-                anyhow::bail!("Model download cancelled. Use --lexical-only to search without embeddings.");
+                anyhow::bail!(
+                    "Model download cancelled. Use --lexical-only to search without embeddings."
+                );
             }
 
             println!("Downloading model files from HuggingFace...");
@@ -98,8 +106,7 @@ impl EmbeddingModel {
     /// Download model files from HuggingFace.
     fn download_model(model_cache: &Path, verbose: bool) -> Result<()> {
         // Create cache directory
-        std::fs::create_dir_all(model_cache)
-            .context("Failed to create model cache directory")?;
+        std::fs::create_dir_all(model_cache).context("Failed to create model cache directory")?;
 
         let files = vec![
             ("config.json", "config.json"),

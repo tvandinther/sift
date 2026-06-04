@@ -20,17 +20,35 @@ fn main() -> Result<()> {
             sift::tui::run(&conn, &config.model_cache)
         }
         Some(Command::Index { command }) => match command {
-            cli::IndexCommand::Add { paths, name, hidden, no_embeddings } => {
-                cmd_index_add(&config, paths, name.as_deref(), hidden, !no_embeddings, verbose)
-            }
+            cli::IndexCommand::Add {
+                paths,
+                name,
+                hidden,
+                no_embeddings,
+            } => cmd_index_add(
+                &config,
+                paths,
+                name.as_deref(),
+                hidden,
+                !no_embeddings,
+                verbose,
+            ),
             cli::IndexCommand::List => cmd_index_list(&config),
             cli::IndexCommand::Delete { path_or_label, yes } => {
                 cmd_index_delete(&config, &path_or_label, yes)
             }
             cli::IndexCommand::Prune => cmd_index_prune(&config),
-            cli::IndexCommand::Refresh { source, force_embeddings, rebuild_vocab } => {
-                cmd_index_refresh(&config, source.as_deref(), force_embeddings, rebuild_vocab, verbose)
-            }
+            cli::IndexCommand::Refresh {
+                source,
+                force_embeddings,
+                rebuild_vocab,
+            } => cmd_index_refresh(
+                &config,
+                source.as_deref(),
+                force_embeddings,
+                rebuild_vocab,
+                verbose,
+            ),
         },
         Some(Command::Config) => cmd_config(&config),
         Some(Command::Version) => cmd_version(),
@@ -188,7 +206,14 @@ fn cmd_index_refresh(
         bail!("--rebuild-vocab can only be used when refreshing all sources (don't specify a source).\nThe term vocabulary is a global index built from all sources.");
     }
 
-    let stats = index::run_refresh(&conn, source, force_embeddings, rebuild_vocab, &config.model_cache, verbose)?;
+    let stats = index::run_refresh(
+        &conn,
+        source,
+        force_embeddings,
+        rebuild_vocab,
+        &config.model_cache,
+        verbose,
+    )?;
 
     println!(
         "\nRefresh complete — {} scanned, {} added, {} updated, {} unchanged, {} removed, {} failed",
@@ -270,8 +295,7 @@ fn cmd_search(
 
                 // Phase 1: Seed search with original query
                 let seed_lex = search::lexical::search(&conn, &query, 100)?;
-                let seed_sem =
-                    search::semantic::search_by_embedding(&conn, &query_embedding, 100)?;
+                let seed_sem = search::semantic::search_by_embedding(&conn, &query_embedding, 100)?;
                 let seed_merged = search::fusion::merge_results(seed_lex, seed_sem);
 
                 // Find nearest-neighbour terms in the vocabulary embedding space

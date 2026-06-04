@@ -11,7 +11,12 @@ pub fn merge_results(
     lexical_results: Vec<ChunkResult>,
     semantic_results: Vec<ChunkResult>,
 ) -> Vec<ChunkResult> {
-    merge_results_weighted(lexical_results, semantic_results, RRF_CONSTANT, RRF_CONSTANT)
+    merge_results_weighted(
+        lexical_results,
+        semantic_results,
+        RRF_CONSTANT,
+        RRF_CONSTANT,
+    )
 }
 
 /// Merge two result lists using Reciprocal Rank Fusion (RRF) with weighted k values.
@@ -30,10 +35,7 @@ pub fn merge_results_weighted(
     // Add lexical results
     for (rank, result) in lexical_results.into_iter().enumerate() {
         let rrf_score = 1.0 / (k_lexical + rank as f32 + 1.0);
-        rrf_scores.insert(
-            result.chunk_id,
-            (result, rrf_score, ResultSource::Lexical),
-        );
+        rrf_scores.insert(result.chunk_id, (result, rrf_score, ResultSource::Lexical));
     }
 
     // Add or merge semantic results

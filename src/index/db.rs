@@ -28,12 +28,10 @@ pub fn open_connection<P: AsRef<Path>>(path: P) -> Result<Connection> {
 
     // Create parent directory if it doesn't exist
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .context("Failed to create database directory")?;
+        std::fs::create_dir_all(parent).context("Failed to create database directory")?;
     }
 
-    let conn = Connection::open(path)
-        .context("Failed to open database connection")?;
+    let conn = Connection::open(path).context("Failed to open database connection")?;
 
     // Enable WAL mode for concurrent reads
     conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -77,7 +75,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
             content='chunks',
             content_rowid='id'
         );
-        "#
+        "#,
     )?;
 
     // Create embeddings table
@@ -95,7 +93,7 @@ fn init_schema(conn: &Connection) -> Result<()> {
             term        TEXT PRIMARY KEY,
             embedding   BLOB NOT NULL
         );
-        "#
+        "#,
     )?;
 
     Ok(())
@@ -152,7 +150,14 @@ pub fn upsert_file(
             indexed_at = ?4,
             size_bytes = ?5,
             chunk_count = ?6",
-        params![source_id, path, checksum, now, size_bytes as i64, chunk_count as i64],
+        params![
+            source_id,
+            path,
+            checksum,
+            now,
+            size_bytes as i64,
+            chunk_count as i64
+        ],
     )?;
 
     let id = conn.last_insert_rowid();
@@ -216,21 +221,22 @@ pub fn list_sources(conn: &Connection) -> Result<Vec<SourceSummary>> {
         LEFT JOIN chunk_embeddings ce ON ce.chunk_id = c.id
         GROUP BY s.id
         ORDER BY s.indexed_at DESC
-        "#
+        "#,
     )?;
 
-    let sources = stmt.query_map([], |row| {
-        Ok(SourceSummary {
-            id: row.get(0)?,
-            path: row.get(1)?,
-            label: row.get(2)?,
-            indexed_at: row.get(3)?,
-            file_count: row.get::<_, i64>(4)? as usize,
-            total_size_bytes: row.get::<_, i64>(5)? as u64,
-            embedding_count: row.get::<_, i64>(6)? as usize,
-        })
-    })?
-    .collect::<Result<Vec<_>, _>>()?;
+    let sources = stmt
+        .query_map([], |row| {
+            Ok(SourceSummary {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                label: row.get(2)?,
+                indexed_at: row.get(3)?,
+                file_count: row.get::<_, i64>(4)? as usize,
+                total_size_bytes: row.get::<_, i64>(5)? as u64,
+                embedding_count: row.get::<_, i64>(6)? as usize,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(sources)
 }
@@ -285,9 +291,7 @@ pub fn get_file_checksum(conn: &Connection, path: &str) -> Result<Option<String>
 
 /// Get all file paths for a given source ID.
 pub fn get_source_files(conn: &Connection, source_id: i64) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT path FROM files WHERE source_id = ?1"
-    )?;
+    let mut stmt = conn.prepare("SELECT path FROM files WHERE source_id = ?1")?;
 
     let paths = stmt
         .query_map(params![source_id], |row| row.get(0))?
@@ -297,7 +301,10 @@ pub fn get_source_files(conn: &Connection, source_id: i64) -> Result<Vec<String>
 }
 
 /// Get source by path or label.
-pub fn get_source_by_identifier(conn: &Connection, identifier: &str) -> Result<Option<(i64, String, Option<String>)>> {
+pub fn get_source_by_identifier(
+    conn: &Connection,
+    identifier: &str,
+) -> Result<Option<(i64, String, Option<String>)>> {
     let result = conn.query_row(
         "SELECT id, path, label FROM sources WHERE path = ?1 OR label = ?1",
         params![identifier],
@@ -319,10 +326,7 @@ pub fn delete_file(conn: &Connection, path: &str) -> Result<()> {
 
 /// Upsert an embedding for a vocabulary term.
 pub fn upsert_term_embedding(conn: &Connection, term: &str, embedding: &[f32]) -> Result<()> {
-    let embedding_bytes: Vec<u8> = embedding
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let embedding_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
 
     conn.execute(
         "INSERT INTO term_embeddings (term, embedding) VALUES (?1, ?2)
@@ -388,10 +392,7 @@ pub fn prune_term_vocab(
     let mut removed = 0;
     for term in current {
         if !valid_terms.contains(&term) {
-            conn.execute(
-                "DELETE FROM term_embeddings WHERE term = ?1",
-                params![term],
-            )?;
+            conn.execute("DELETE FROM term_embeddings WHERE term = ?1", params![term])?;
             removed += 1;
         }
     }
@@ -408,10 +409,7 @@ pub fn insert_embedding(conn: &Connection, chunk_id: i64, embedding: &[f32]) -> 
     }
 
     // Convert to bytes for vec0
-    let embedding_bytes: Vec<u8> = embedding
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let embedding_bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
 
     conn.execute(
         "INSERT INTO chunk_embeddings (chunk_id, embedding) VALUES (?1, ?2)",

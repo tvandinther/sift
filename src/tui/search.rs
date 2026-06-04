@@ -24,6 +24,12 @@ pub struct SearchView {
     is_searching: bool,
 }
 
+impl Default for SearchView {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SearchView {
     pub fn new() -> Self {
         Self {
@@ -135,7 +141,12 @@ impl SearchView {
     }
 
     /// Execute search (always hybrid: lexical + semantic).
-    pub fn execute_search(&mut self, conn: &Connection, model_cache: &std::path::Path, limit: usize) -> Result<()> {
+    pub fn execute_search(
+        &mut self,
+        conn: &Connection,
+        model_cache: &std::path::Path,
+        limit: usize,
+    ) -> Result<()> {
         self.error = None;
 
         if self.query.trim().is_empty() {
@@ -231,17 +242,23 @@ impl SearchView {
             theme::border()
         };
 
-        let paragraph = Paragraph::new(Line::from(line))
-            .block(Block::default().borders(Borders::ALL).title(title).border_style(border_style));
+        let paragraph = Paragraph::new(Line::from(line)).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        );
 
         frame.render_widget(paragraph, area);
     }
 
     fn render_results(&mut self, frame: &mut Frame, area: Rect) {
         if let Some(err) = &self.error {
-            let error_msg = Paragraph::new(err.as_str())
-                .style(theme::error())
-                .block(Block::default().borders(Borders::ALL).border_style(theme::border()));
+            let error_msg = Paragraph::new(err.as_str()).style(theme::error()).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border()),
+            );
             frame.render_widget(error_msg, area);
             return;
         }
@@ -249,7 +266,11 @@ impl SearchView {
         if self.is_searching {
             let loading = Paragraph::new("Searching...")
                 .style(theme::mode_indicator())
-                .block(Block::default().borders(Borders::ALL).border_style(theme::border()));
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(theme::border()),
+                );
             frame.render_widget(loading, area);
             return;
         }
@@ -260,9 +281,11 @@ impl SearchView {
             } else {
                 "No results found"
             };
-            let empty = Paragraph::new(msg)
-                .style(theme::help())
-                .block(Block::default().borders(Borders::ALL).border_style(theme::border()));
+            let empty = Paragraph::new(msg).style(theme::help()).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme::border()),
+            );
             frame.render_widget(empty, area);
             return;
         }
