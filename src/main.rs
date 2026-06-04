@@ -111,8 +111,8 @@ fn cmd_index_list(config: &Config) -> Result<()> {
 
     // Print header
     println!(
-        "{:<40} {:<12} {:<8} {:<10} {:<12} {}",
-        "SOURCE", "LABEL", "FILES", "SIZE", "EMBEDDINGS", "INDEXED"
+        "{:<40} {:<12} {:<8} {:<10} {:<12} INDEXED",
+        "SOURCE", "LABEL", "FILES", "SIZE", "EMBEDDINGS"
     );
     println!("{}", "-".repeat(110));
 

@@ -65,7 +65,7 @@ fn test_index_fixtures() -> Result<()> {
     // Index the fixtures (without embeddings for speed)
     let stats = index::run_index(
         &conn,
-        &[fixtures_path.clone()],
+        std::slice::from_ref(&fixtures_path),
         None,
         false,
         false,
