@@ -59,6 +59,7 @@ fn main() -> Result<()> {
             semantic_only,
             fast,
             json,
+            min_score,
         }) => {
             let mode = if lexical_only {
                 search::SearchMode::LexicalOnly
@@ -68,7 +69,7 @@ fn main() -> Result<()> {
                 search::SearchMode::Hybrid
             };
 
-            cmd_search(&config, query, limit, mode, fast, json, verbose)
+            cmd_search(&config, query, limit, mode, fast, json, min_score, verbose)
         }
     }
 }
@@ -240,6 +241,7 @@ fn cmd_search(
     mode: search::SearchMode,
     fast: bool,
     json: bool,
+    min_score: f32,
     verbose: bool,
 ) -> Result<()> {
     let conn = index::db::open_connection(&config.db_path)?;
@@ -344,8 +346,13 @@ fn cmd_search(
         }
     };
 
-    // Truncate to limit
-    let file_results: Vec<_> = file_results.into_iter().take(limit).collect();
+    // Filter by minimum relevance threshold, then truncate to limit
+    let threshold = min_score / 100.0 * search::fusion::MAX_RRF_SCORE;
+    let file_results: Vec<_> = file_results
+        .into_iter()
+        .filter(|r| r.score >= threshold)
+        .take(limit)
+        .collect();
 
     if file_results.is_empty() {
         println!("No results found.");
@@ -356,11 +363,12 @@ fn cmd_search(
     if json {
         println!("{}", serde_json::to_string_pretty(&file_results)?);
     } else {
-        for result in file_results {
+        for result in &file_results {
             println!(
-                "{:<60} {:>8}  {}",
+                "{:<60} {:>8}  {:>4}  {}",
                 truncate(&result.file_path.display().to_string(), 60),
                 result.source,
+                format!("{}%", search::fusion::score_to_relevance_pct(result.score)),
                 truncate(&result.snippet, 80)
             );
         }

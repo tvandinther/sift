@@ -3,6 +3,17 @@ use std::collections::HashMap;
 
 const RRF_CONSTANT: f32 = 60.0;
 
+/// Theoretical maximum RRF score: rank 1 in both lexical and semantic with k=60.
+pub const MAX_RRF_SCORE: f32 = 2.0 / (RRF_CONSTANT + 1.0);
+
+/// Convert a raw RRF score to a relevance percentage (0–100).
+///
+/// Normalised against the theoretical hybrid maximum (rank 1 in both sources).
+/// Single-source results top out around 50%; results appearing in both reach up to 100%.
+pub fn score_to_relevance_pct(score: f32) -> u8 {
+    (score / MAX_RRF_SCORE * 100.0).clamp(0.0, 100.0) as u8
+}
+
 /// Merge two result lists using Reciprocal Rank Fusion (RRF).
 ///
 /// RRF score for item i: sum(1 / (k + rank_i)) across all rankings
