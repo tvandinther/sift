@@ -69,7 +69,18 @@ fn main() -> Result<()> {
                 search::SearchMode::Hybrid
             };
 
-            cmd_search(&config, query, limit, mode, fast, json, min_score, verbose)
+            cmd_search(
+                &config,
+                SearchArgs {
+                    query,
+                    limit,
+                    mode,
+                    fast,
+                    json,
+                    min_score,
+                    verbose,
+                },
+            )
         }
     }
 }
@@ -234,8 +245,7 @@ fn cmd_version() -> Result<()> {
     Ok(())
 }
 
-fn cmd_search(
-    config: &Config,
+struct SearchArgs {
     query: String,
     limit: usize,
     mode: search::SearchMode,
@@ -243,7 +253,18 @@ fn cmd_search(
     json: bool,
     min_score: f32,
     verbose: bool,
-) -> Result<()> {
+}
+
+fn cmd_search(config: &Config, args: SearchArgs) -> Result<()> {
+    let SearchArgs {
+        query,
+        limit,
+        mode,
+        fast,
+        json,
+        min_score,
+        verbose,
+    } = args;
     let conn = index::db::open_connection(&config.db_path)?;
 
     // Check if index is empty
