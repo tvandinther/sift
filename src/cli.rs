@@ -52,6 +52,11 @@ pub enum Command {
         /// Output results as JSON
         #[arg(long)]
         json: bool,
+
+        /// Minimum relevance score (0–100%). Results below this threshold are hidden.
+        /// Use 0 to return all results regardless of score.
+        #[arg(long, default_value = "20")]
+        min_score: f32,
     },
 
     /// Show version information
